@@ -34,8 +34,8 @@ def _build_body(payload: str, log_type: str, source_id: str) -> bytes:
             event = {"simulated_log_source": source_id, **event}
         return json.dumps([event]).encode("utf-8")
     # raw / cef / leef: prepend simulated_log_source so XSIAM can extract it
-    line = f'simulated_log_source="{source_id}" {payload.rstrip(chr(10))}'
-    return (line + "\n").encode("utf-8")
+    stripped = payload.rstrip("\n")
+    return f'simulated_log_source="{source_id}" {stripped}\n'.encode("utf-8")
 
 
 class HTTPTransport(Transport):
@@ -67,10 +67,28 @@ class HTTPTransport(Transport):
 
         headers = self._build_headers(source_meta)
 
+        src = source_meta.source_id
+        url = settings.xsiam_url
         for attempt in range(MAX_RETRIES):
             try:
                 client = self._get_client()
-                resp = await client.post(settings.xsiam_url, content=encoded, headers=headers)
+                resp = await client.post(url, content=encoded, headers=headers)
+                if resp.status_code >= 400:
+                    body_snippet = resp.text[:1000]
+                    logger.error({
+                        "event": "xsiam_http_error",
+                        "source": src,
+                        "status": resp.status_code,
+                        "url": url,
+                        "response": body_snippet,
+                    })
+                else:
+                    logger.info({
+                        "event": "xsiam_http_ok",
+                        "source": src,
+                        "status": resp.status_code,
+                        "bytes": len(encoded),
+                    })
                 resp.raise_for_status()
                 return SendResult(success=True, bytes_sent=len(encoded))
             except httpx.HTTPStatusError as e:
@@ -84,6 +102,7 @@ class HTTPTransport(Transport):
                     return SendResult(success=False, error=f"HTTP {status}: {e.response.text[:200]}")
                 await asyncio.sleep(RETRY_BASE_DELAY * (2 ** attempt))
             except Exception as e:
+                logger.error({"event": "xsiam_connect_error", "source": src, "url": url, "error": str(e)})
                 if attempt == MAX_RETRIES - 1:
                     return SendResult(success=False, error=str(e))
                 await asyncio.sleep(RETRY_BASE_DELAY * (2 ** attempt))
@@ -111,10 +130,27 @@ class HTTPTransport(Transport):
 
         headers = self._build_headers(source_meta)
 
+        src = source_meta.source_id
+        url = settings.xsiam_url
         for attempt in range(MAX_RETRIES):
             try:
                 client = self._get_client()
-                resp = await client.post(settings.xsiam_url, content=encoded, headers=headers)
+                resp = await client.post(url, content=encoded, headers=headers)
+                if resp.status_code >= 400:
+                    logger.error({
+                        "event": "xsiam_http_error",
+                        "source": src,
+                        "status": resp.status_code,
+                        "url": url,
+                        "response": resp.text[:1000],
+                    })
+                else:
+                    logger.info({
+                        "event": "xsiam_http_ok",
+                        "source": src,
+                        "status": resp.status_code,
+                        "bytes": len(encoded),
+                    })
                 resp.raise_for_status()
                 return SendResult(success=True, bytes_sent=len(encoded))
             except httpx.HTTPStatusError as e:
@@ -125,12 +161,11 @@ class HTTPTransport(Transport):
                         await asyncio.sleep(retry_after)
                         continue
                 if status < 500 or attempt == MAX_RETRIES - 1:
-                    logger.warning({"event": "http_batch_error", "status": status, "source": source_meta.source_id})
                     return SendResult(success=False, error=f"HTTP {status}")
                 await asyncio.sleep(RETRY_BASE_DELAY * (2 ** attempt))
             except Exception as e:
+                logger.error({"event": "xsiam_connect_error", "source": src, "url": url, "error": str(e)})
                 if attempt == MAX_RETRIES - 1:
-                    logger.error({"event": "http_batch_exception", "error": str(e), "source": source_meta.source_id})
                     return SendResult(success=False, error=str(e))
                 await asyncio.sleep(RETRY_BASE_DELAY * (2 ** attempt))
 

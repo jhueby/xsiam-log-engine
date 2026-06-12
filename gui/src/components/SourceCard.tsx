@@ -1,6 +1,11 @@
 import { useState } from 'react'
 import { HttpCompression, HttpLogType, SourceInfo, patchSource, startSource, stopSource } from '../api/client'
-import { ChevronDown, ChevronUp } from 'lucide-react'
+import { ChevronDown, ChevronUp, Copy, Check } from 'lucide-react'
+
+const BASE_RULE = '[INGEST:vendor="log", product="sim", target_dataset="log_sim_raw", no_hit=drop]'
+function makeParsingRule(sourceId: string) {
+  return `${BASE_RULE}filter simulated_log_source = "${sourceId}";`
+}
 
 const TRANSPORT_COLORS: Record<string, string> = {
   http: 'bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300',
@@ -214,6 +219,35 @@ function HttpSettings({ source, onUpdate }: { source: SourceInfo; onUpdate: () =
         </button>
         {saved && <span className="text-xs text-green-600 dark:text-green-400">Saved</span>}
       </div>
+
+      <ParsingRuleBlock sourceId={source.id} />
+    </div>
+  )
+}
+
+function ParsingRuleBlock({ sourceId }: { sourceId: string }) {
+  const [copied, setCopied] = useState(false)
+  const rule = makeParsingRule(sourceId)
+  const copy = () => {
+    navigator.clipboard.writeText(rule)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+  return (
+    <div className="border-t border-gray-100 dark:border-gray-800 pt-2 space-y-1">
+      <div className="flex items-center justify-between">
+        <span className="text-xs text-gray-500">XSIAM parsing rule</span>
+        <button
+          onClick={copy}
+          className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
+        >
+          {copied ? <Check size={11} className="text-green-500" /> : <Copy size={11} />}
+          {copied ? 'Copied' : 'Copy'}
+        </button>
+      </div>
+      <pre className="text-xs font-mono text-gray-600 dark:text-gray-400 whitespace-pre-wrap break-all leading-relaxed bg-gray-50 dark:bg-gray-800/50 rounded p-2">
+        {rule}
+      </pre>
     </div>
   )
 }
