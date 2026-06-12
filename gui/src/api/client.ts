@@ -65,8 +65,8 @@ export interface TransportConfig {
   brokervm_syslog_port: number
   brokervm_syslog_proto: 'udp' | 'tcp' | 'tls'
   brokervm_wec_port: number
-  tls_ca_cert_path: string
-  tls_client_cert_path: string
+  wec_subscription_url: string
+  tls_client_cert_path: string  // read-only; set by /api/certs/pfx
   tls_client_key_path: string
 }
 

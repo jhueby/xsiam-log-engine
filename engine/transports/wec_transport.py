@@ -6,6 +6,7 @@ import ssl
 import uuid
 import warnings
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 from xml.sax.saxutils import escape
 
 import httpx
@@ -39,10 +40,23 @@ _WSMAN_ENVELOPE = """<?xml version="1.0" encoding="UTF-8"?>
 </s:Envelope>"""
 
 
+def _parse_subscription_url(url: str) -> tuple[str, int]:
+    """Return (host, port) from a Windows WEF subscription manager URL.
+
+    Expected format: Server=HTTPS://host:port/path,Refresh=N,IssuerCA=THUMBPRINT
+    Falls back to brokervm_host / brokervm_wec_port when the URL is absent or unparseable.
+    """
+    for part in url.split(','):
+        if part.strip().upper().startswith('SERVER='):
+            parsed = urlparse(part.strip()[7:])
+            host = parsed.hostname or settings.brokervm_host
+            port = parsed.port or settings.brokervm_wec_port
+            return host, port
+    return settings.brokervm_host, settings.brokervm_wec_port
+
+
 def _build_ssl_context() -> ssl.SSLContext:
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-    # Accept TLS 1.0+ — the BrokerVM may negotiate 1.2 or 1.3 in practice;
-    # setting the minimum to 1.0 avoids rejecting older but still functional servers.
     ctx.check_hostname = False  # must disable before setting CERT_NONE
     ctx.verify_mode = ssl.CERT_NONE
     try:
@@ -50,11 +64,7 @@ def _build_ssl_context() -> ssl.SSLContext:
             warnings.simplefilter("ignore", DeprecationWarning)
             ctx.minimum_version = ssl.TLSVersion.TLSv1
     except (ValueError, AttributeError):
-        pass  # system OpenSSL may disallow TLS 1.0; fall back to its default minimum
-    if settings.tls_ca_cert_path:
-        ctx.load_verify_locations(settings.tls_ca_cert_path)
-        ctx.verify_mode = ssl.CERT_REQUIRED
-        ctx.check_hostname = True
+        pass
     if settings.tls_client_cert_path and settings.tls_client_key_path:
         ctx.load_cert_chain(settings.tls_client_cert_path, settings.tls_client_key_path)
     return ctx
@@ -106,18 +116,17 @@ class WECTransport(Transport):
         self._client: httpx.AsyncClient | None = None
         self._connected_host: str | None = None
         self._connected_port: int | None = None
-        self._connected_ca: str | None = None
+        self._connected_sub: str | None = None
         self._connected_cert: str | None = None
 
     def _get_client(self) -> httpx.AsyncClient:
-        host = settings.brokervm_host
-        port = settings.brokervm_wec_port
-        ca = settings.tls_ca_cert_path
+        sub = settings.wec_subscription_url
+        host, port = _parse_subscription_url(sub) if sub else (settings.brokervm_host, settings.brokervm_wec_port)
         cert = settings.tls_client_cert_path
         if (self._client is None or self._client.is_closed
                 or self._connected_host != host
                 or self._connected_port != port
-                or self._connected_ca != ca
+                or self._connected_sub != sub
                 or self._connected_cert != cert):
             self._client = httpx.AsyncClient(
                 base_url=f"https://{host}:{port}",
@@ -126,7 +135,7 @@ class WECTransport(Transport):
             )
             self._connected_host = host
             self._connected_port = port
-            self._connected_ca = ca
+            self._connected_sub = sub
             self._connected_cert = cert
         return self._client
 
@@ -136,8 +145,8 @@ class WECTransport(Transport):
         except Exception:
             event = {}
 
-        host = settings.brokervm_host
-        port = settings.brokervm_wec_port
+        sub = settings.wec_subscription_url
+        host, port = _parse_subscription_url(sub) if sub else (settings.brokervm_host, settings.brokervm_wec_port)
         event_xml = _build_event_xml(event)
         message_id = str(uuid.uuid4())
         envelope = _WSMAN_ENVELOPE.format(
@@ -179,7 +188,7 @@ class WECTransport(Transport):
         self._client = None
         self._connected_host = None
         self._connected_port = None
-        self._connected_ca = None
+        self._connected_sub = None
         self._connected_cert = None
 
     async def close(self) -> None:

@@ -40,8 +40,8 @@ class TransportConfig(BaseModel):
     brokervm_syslog_port: int
     brokervm_syslog_proto: Literal["udp", "tcp", "tls"]
     brokervm_wec_port: int
-    tls_ca_cert_path: str
-    tls_client_cert_path: str
+    wec_subscription_url: str
+    tls_client_cert_path: str  # read-only; populated by /api/certs/pfx
     tls_client_key_path: str
 
 
@@ -53,9 +53,7 @@ class TransportConfigUpdate(BaseModel):
     brokervm_syslog_port: int | None = None
     brokervm_syslog_proto: Literal["udp", "tcp", "tls"] | None = None
     brokervm_wec_port: int | None = None
-    tls_ca_cert_path: str | None = None
-    tls_client_cert_path: str | None = None
-    tls_client_key_path: str | None = None
+    wec_subscription_url: str | None = None
 
 
 

@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import { PfxUploadResult, TransportConfig, updateConfig, uploadPfx } from '../api/client'
-import { Save, RefreshCw, Upload, ShieldCheck } from 'lucide-react'
+import { Save, RefreshCw, Upload, ShieldCheck, CheckCircle } from 'lucide-react'
 
 interface Props {
   config: TransportConfig
@@ -25,6 +25,9 @@ export default function ConfigPanel({ config, onSaved }: Props) {
     try {
       const payload = { ...form }
       if (!payload.xsiam_api_key) delete (payload as any).xsiam_api_key
+      // cert paths are read-only; only set via pfx upload endpoint
+      delete (payload as any).tls_client_cert_path
+      delete (payload as any).tls_client_key_path
       await updateConfig(payload)
       setSavedMsg('Saved & reloaded')
       onSaved()
@@ -75,22 +78,26 @@ export default function ConfigPanel({ config, onSaved }: Props) {
             </select>
           </div>
           <Field label="WEC Port" value={String(form.brokervm_wec_port)} onChange={v => set('brokervm_wec_port', parseInt(v))} type="number" />
+          <div className="md:col-span-2">
+            <Field
+              label="WEC Subscription Manager URL"
+              value={form.wec_subscription_url}
+              onChange={v => set('wec_subscription_url', v)}
+              placeholder="Server=HTTPS://bvm.lab:5986/wsman/SubscriptionManager/WEC,Refresh=600,IssuerCA=THUMBPRINT"
+            />
+          </div>
         </div>
       </section>
 
       <section>
-        <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 border-b border-gray-200 dark:border-gray-800 pb-2">TLS Certificates</h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Field label="CA Cert Path" value={form.tls_ca_cert_path} onChange={v => set('tls_ca_cert_path', v)} placeholder="/app/certs/ca.pem" />
-          <Field label="Client Cert Path" value={form.tls_client_cert_path} onChange={v => set('tls_client_cert_path', v)} placeholder="/app/certs/client.crt" />
-          <Field label="Client Key Path" value={form.tls_client_key_path} onChange={v => set('tls_client_key_path', v)} placeholder="/app/certs/client.key" />
-        </div>
-        <div className="mt-4">
-          <PfxUpload onUploaded={info => {
-            set('tls_client_cert_path', info.cert_path)
-            set('tls_client_key_path', info.key_path)
-          }} />
-        </div>
+        <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 border-b border-gray-200 dark:border-gray-800 pb-2">WEC Client Certificate</h3>
+        {(form.tls_client_cert_path) && (
+          <div className="flex items-center gap-2 text-xs text-green-600 dark:text-green-400 mb-3">
+            <CheckCircle size={13} />
+            <span>Certificate active: <code className="font-mono">{form.tls_client_cert_path}</code></span>
+          </div>
+        )}
+        <PfxUpload onUploaded={() => onSaved()} />
       </section>
 
       <div className="flex items-center gap-3">

@@ -28,7 +28,7 @@ async def get_config() -> TransportConfig:
         brokervm_syslog_port=settings.brokervm_syslog_port,
         brokervm_syslog_proto=settings.brokervm_syslog_proto,
         brokervm_wec_port=settings.brokervm_wec_port,
-        tls_ca_cert_path=settings.tls_ca_cert_path,
+        wec_subscription_url=settings.wec_subscription_url,
         tls_client_cert_path=settings.tls_client_cert_path,
         tls_client_key_path=settings.tls_client_key_path,
     )
@@ -59,15 +59,9 @@ async def update_config(update: TransportConfigUpdate) -> TransportConfig:
     if update.brokervm_wec_port is not None:
         settings.brokervm_wec_port = update.brokervm_wec_port
         env_updates["BROKERVM_WEC_PORT"] = str(update.brokervm_wec_port)
-    if update.tls_ca_cert_path is not None:
-        settings.tls_ca_cert_path = update.tls_ca_cert_path
-        env_updates["TLS_CA_CERT_PATH"] = update.tls_ca_cert_path
-    if update.tls_client_cert_path is not None:
-        settings.tls_client_cert_path = update.tls_client_cert_path
-        env_updates["TLS_CLIENT_CERT_PATH"] = update.tls_client_cert_path
-    if update.tls_client_key_path is not None:
-        settings.tls_client_key_path = update.tls_client_key_path
-        env_updates["TLS_CLIENT_KEY_PATH"] = update.tls_client_key_path
+    if update.wec_subscription_url is not None:
+        settings.wec_subscription_url = update.wec_subscription_url
+        env_updates["WEC_SUBSCRIPTION_URL"] = update.wec_subscription_url
 
     if env_updates:
         try:

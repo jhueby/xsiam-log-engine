@@ -10,8 +10,8 @@ const EMPTY_CONFIG: TransportConfig = {
   brokervm_host: '',
   brokervm_syslog_port: 514,
   brokervm_syslog_proto: 'udp',
-  brokervm_wec_port: 5985,
-  tls_ca_cert_path: '',
+  brokervm_wec_port: 5986,
+  wec_subscription_url: '',
   tls_client_cert_path: '',
   tls_client_key_path: '',
 }

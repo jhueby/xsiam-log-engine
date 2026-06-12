@@ -89,11 +89,10 @@ class SyslogTransport(Transport):
                     self._tcp_writer.close()
                 if proto == "tls":
                     ctx = ssl.create_default_context()
-                    ca = settings.tls_ca_cert_path
+                    ctx.check_hostname = False
+                    ctx.verify_mode = ssl.CERT_NONE
                     cert = settings.tls_client_cert_path
                     key = settings.tls_client_key_path
-                    if ca:
-                        ctx.load_verify_locations(ca)
                     if cert and key:
                         ctx.load_cert_chain(cert, key)
                     _, writer = await asyncio.open_connection(host, port, ssl=ctx)

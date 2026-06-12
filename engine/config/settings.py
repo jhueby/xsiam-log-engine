@@ -32,8 +32,10 @@ class Settings(BaseSettings):
     brokervm_syslog_proto: Literal["udp", "tcp", "tls"] = "udp"
     brokervm_wec_port: int = 5985
 
-    # TLS
-    tls_ca_cert_path: str = ""
+    # WEC
+    wec_subscription_url: str = ""  # Server=HTTPS://host:port/wsman/...,Refresh=N,IssuerCA=THUMBPRINT
+
+    # TLS client cert (set by .pfx upload, not edited directly)
     tls_client_cert_path: str = ""
     tls_client_key_path: str = ""
 
