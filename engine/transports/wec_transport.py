@@ -147,6 +147,7 @@ class WECTransport(Transport):
 
         sub = settings.wec_subscription_url
         host, port = _parse_subscription_url(sub) if sub else (settings.brokervm_host, settings.brokervm_wec_port)
+        cert = settings.tls_client_cert_path or "(none)"
         event_xml = _build_event_xml(event)
         message_id = str(uuid.uuid4())
         envelope = _WSMAN_ENVELOPE.format(
@@ -157,6 +158,16 @@ class WECTransport(Transport):
         )
         encoded = envelope.encode("utf-8")
 
+        logger.info({
+            "event": "wec_request",
+            "source": source_meta.source_id,
+            "host": host,
+            "port": port,
+            "cert": cert,
+            "bytes": len(encoded),
+            "envelope_preview": envelope[:500],
+        })
+
         try:
             client = self._get_client()
             resp = await client.post(
@@ -165,15 +176,36 @@ class WECTransport(Transport):
                 headers={"Content-Type": "application/soap+xml;charset=UTF-8", "User-Agent": "WEC/5.0 WinRM"},
             )
             if resp.status_code in (200, 201, 202):
+                logger.info({
+                    "event": "wec_ok",
+                    "source": source_meta.source_id,
+                    "status": resp.status_code,
+                    "bytes": len(encoded),
+                })
                 return SendResult(success=True, bytes_sent=len(encoded))
-            return SendResult(success=False, error=f"HTTP {resp.status_code}")
+            logger.error({
+                "event": "wec_http_error",
+                "source": source_meta.source_id,
+                "host": host,
+                "port": port,
+                "status": resp.status_code,
+                "response": resp.text[:2000],
+            })
+            return SendResult(success=False, error=f"HTTP {resp.status_code}: {resp.text[:200]}")
         except Exception as e:
             self._client = None
             self._connected_host = None
             self._connected_port = None
-            self._connected_ca = None
+            self._connected_sub = None
             self._connected_cert = None
-            logger.error({"event": "wec_send_error", "error": str(e), "source": source_meta.source_id})
+            logger.error({
+                "event": "wec_connect_error",
+                "source": source_meta.source_id,
+                "host": host,
+                "port": port,
+                "cert": cert,
+                "error": str(e),
+            })
             return SendResult(success=False, error=str(e))
 
     async def health_check(self) -> bool:
