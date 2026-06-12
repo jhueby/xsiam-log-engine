@@ -4,7 +4,7 @@ import json
 import random
 from datetime import datetime, timezone
 
-from sources.base_source import LogEvent, LogSource
+from sources.base_source import LogEvent, LogSource, TransportName
 from utils.faker_helpers import random_windows_host, weighted_choice
 
 _EVENTS = {
@@ -27,7 +27,7 @@ class WindowsSystemSource(LogSource):
     id = "windows_system"
     display_name = "Windows System"
     description = "Windows System Event Log — service state changes, system start/stop"
-    default_transport: str = "wec"
+    default_transport: TransportName = "wec"
     supported_transports = ["wec", "syslog"]
     default_eps = 1.0
     tags = ["windows", "system"]

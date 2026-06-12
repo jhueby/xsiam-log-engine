@@ -5,7 +5,7 @@ import random
 from datetime import datetime, timezone
 from faker import Faker
 
-from sources.base_source import LogEvent, LogSource
+from sources.base_source import LogEvent, LogSource, TransportName
 from utils.faker_helpers import random_internal_ip, random_user, random_domain_user
 
 fake = Faker()
@@ -26,7 +26,7 @@ class ProxyZscalerSource(LogSource):
     id = "proxy_zscaler"
     display_name = "Zscaler Internet Access"
     description = "Zscaler NSS feed format — web proxy events"
-    default_transport: str = "syslog"
+    default_transport: TransportName = "syslog"
     supported_transports = ["syslog"]
     default_eps = 20.0
     tags = ["proxy", "web", "cloud", "zscaler"]

@@ -5,7 +5,7 @@ import random
 from datetime import datetime, timezone
 from faker import Faker
 
-from sources.base_source import LogEvent, LogSource
+from sources.base_source import LogEvent, LogSource, TransportName
 from utils.faker_helpers import random_internal_ip, random_external_ip, random_port, random_well_known_port
 
 fake = Faker()
@@ -27,7 +27,7 @@ class CiscoMerakiSource(LogSource):
     id = "cisco_meraki"
     display_name = "Cisco Meraki"
     description = "Cisco Meraki — JSON-style syslog events (flows, URLs, IDS alerts)"
-    default_transport: str = "syslog"
+    default_transport: TransportName = "syslog"
     supported_transports = ["syslog"]
     default_eps = 5.0
     tags = ["network", "firewall", "cisco", "meraki"]

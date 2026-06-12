@@ -3,7 +3,7 @@ from __future__ import annotations
 import random
 from datetime import datetime, timezone
 
-from sources.base_source import LogEvent, LogSource
+from sources.base_source import LogEvent, LogSource, TransportName
 from utils.faker_helpers import random_linux_host, random_internal_ip
 
 _KERNEL_MSGS = [
@@ -39,7 +39,7 @@ class LinuxSyslogSource(LogSource):
     id = "linux_syslog"
     display_name = "Linux Syslog"
     description = "Generic Linux syslog — kernel, cron, daemon messages"
-    default_transport: str = "syslog"
+    default_transport: TransportName = "syslog"
     supported_transports = ["syslog"]
     default_eps = 5.0
     tags = ["linux", "system", "syslog"]

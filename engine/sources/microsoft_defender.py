@@ -5,7 +5,7 @@ import random
 import uuid
 from datetime import datetime, timezone
 
-from sources.base_source import LogEvent, LogSource
+from sources.base_source import LogEvent, LogSource, TransportName
 from utils.faker_helpers import random_windows_host, random_user, random_internal_ip, random_external_ip
 
 _THREAT_NAMES = [
@@ -37,7 +37,7 @@ class MicrosoftDefenderSource(LogSource):
     id = "microsoft_defender"
     display_name = "Microsoft Defender ATP"
     description = "Microsoft Defender — ATP alerts, quarantine, and detection events"
-    default_transport: str = "wec"
+    default_transport: TransportName = "wec"
     supported_transports = ["wec", "http"]
     default_eps = 1.0
     tags = ["windows", "edr", "endpoint", "antivirus"]

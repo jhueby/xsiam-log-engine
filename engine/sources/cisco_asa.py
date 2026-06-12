@@ -3,7 +3,7 @@ from __future__ import annotations
 import random
 from datetime import datetime, timezone
 
-from sources.base_source import LogEvent, LogSource
+from sources.base_source import LogEvent, LogSource, TransportName
 from utils.faker_helpers import (
     random_internal_ip,
     random_external_ip,
@@ -72,7 +72,7 @@ class CiscoASASource(LogSource):
     id = "cisco_asa"
     display_name = "Cisco ASA"
     description = "Cisco ASA firewall — %ASA- prefixed syslog messages"
-    default_transport: str = "syslog"
+    default_transport: TransportName = "syslog"
     supported_transports = ["syslog"]
     default_eps = 5.0
     tags = ["network", "firewall", "cisco"]

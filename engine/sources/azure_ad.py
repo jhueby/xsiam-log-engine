@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime, timezone
 from faker import Faker
 
-from sources.base_source import LogEvent, LogSource
+from sources.base_source import LogEvent, LogSource, TransportName
 from utils.faker_helpers import random_domain_user, random_external_ip, random_internal_ip
 
 fake = Faker()
@@ -44,7 +44,7 @@ class AzureADSource(LogSource):
     id = "azure_ad"
     display_name = "Azure AD / Entra ID"
     description = "Azure Active Directory — SignInLogs and AuditLogs (Azure Monitor format)"
-    default_transport: str = "http"
+    default_transport: TransportName = "http"
     supported_transports = ["http"]
     default_eps = 3.0
     tags = ["identity", "cloud", "azure", "microsoft"]

@@ -4,7 +4,7 @@ import random
 from datetime import datetime, timezone
 from faker import Faker
 
-from sources.base_source import LogEvent, LogSource
+from sources.base_source import LogEvent, LogSource, TransportName
 from utils.faker_helpers import (
     random_internal_ip, random_external_ip, random_port, random_well_known_port,
     random_user, random_network_device, weighted_choice,
@@ -115,7 +115,7 @@ class FortinetFortiGateSource(LogSource):
     id = "fortinet_fortigate"
     display_name = "Fortinet FortiGate"
     description = "Fortinet FortiGate — key=value syslog: traffic, UTM, event types"
-    default_transport: str = "syslog"
+    default_transport: TransportName = "syslog"
     supported_transports = ["syslog"]
     default_eps = 5.0
     tags = ["network", "firewall", "fortinet"]

@@ -4,7 +4,7 @@ import random
 from datetime import datetime, timezone
 from faker import Faker
 
-from sources.base_source import LogEvent, LogSource
+from sources.base_source import LogEvent, LogSource, TransportName
 from utils.faker_helpers import (
     random_internal_ip, random_external_ip, random_port, random_well_known_port,
     random_user, random_network_device, weighted_choice,
@@ -123,7 +123,7 @@ class PaloAltoNGFWSource(LogSource):
     id = "palo_alto_ngfw"
     display_name = "Palo Alto NGFW"
     description = "Palo Alto Networks NGFW/Panorama — TRAFFIC, THREAT, SYSTEM, CONFIG log types"
-    default_transport: str = "syslog"
+    default_transport: TransportName = "syslog"
     supported_transports = ["syslog", "http"]
     default_eps = 10.0
     tags = ["network", "firewall", "paloalto"]

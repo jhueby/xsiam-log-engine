@@ -5,10 +5,10 @@ import random
 import uuid
 from datetime import datetime, timezone
 
-from sources.base_source import LogEvent, LogSource
+from sources.base_source import LogEvent, LogSource, TransportName
 from utils.faker_helpers import (
     random_windows_host, random_linux_host, random_user,
-    random_internal_ip, random_external_ip, random_port,
+    random_internal_ip, random_external_ip, random_port, random_sid,
     PROCESSES_WINDOWS,
 )
 
@@ -132,7 +132,7 @@ def _user_logon() -> dict:
         "EventType": "UserLogon",
         "ComputerName": host,
         "UserName": f"CORP\\{user}",
-        "UserSid": f"S-1-5-21-{random.randint(1000000,9999999)}-{random.randint(1000,9999)}",
+        "UserSid": random_sid(),
         "LogonType": random.choice([2, 3, 10]),
         "RemoteIP": random_internal_ip(),
         "AuthenticationPackage": random.choice(["NTLM", "Kerberos", "Negotiate"]),
@@ -152,7 +152,7 @@ class CrowdStrikeFalconSource(LogSource):
     id = "crowdstrike_falcon"
     display_name = "CrowdStrike Falcon"
     description = "CrowdStrike Falcon EDR — Detection, ProcessRollup2, NetworkConnect events (JSON)"
-    default_transport: str = "http"
+    default_transport: TransportName = "http"
     xsiam_dataset: str = "crowdstrike_falcon_raw"
     supported_transports = ["http"]
     default_eps = 3.0

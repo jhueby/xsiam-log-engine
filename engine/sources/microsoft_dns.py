@@ -5,7 +5,7 @@ import random
 from datetime import datetime, timezone
 from faker import Faker
 
-from sources.base_source import LogEvent, LogSource
+from sources.base_source import LogEvent, LogSource, TransportName
 from utils.faker_helpers import random_internal_ip, random_windows_host
 
 fake = Faker()
@@ -20,7 +20,7 @@ class MicrosoftDNSSource(LogSource):
     id = "microsoft_dns"
     display_name = "Microsoft DNS Server"
     description = "Windows DNS Server ETW logs — queries and responses"
-    default_transport: str = "wec"
+    default_transport: TransportName = "wec"
     supported_transports = ["wec", "syslog"]
     default_eps = 10.0
     tags = ["windows", "dns", "network"]
@@ -33,7 +33,7 @@ class MicrosoftDNSSource(LogSource):
             f"wpad.corp.local",
             fake.hostname(),
         ])
-        qtype = random.choices(_QTYPES, weights=[50, 15, 8, 10, 8, 4, 2, 1, 2])[0]
+        qtype = random.choices(_QTYPES, weights=_QTYPE_WEIGHTS)[0]
         rcode_val = random.choices([0, 2, 3, 5], weights=_RCODE_WEIGHTS)[0]
         rcode = _RCODE_NAMES[rcode_val]
         ts = datetime.now(timezone.utc).isoformat()

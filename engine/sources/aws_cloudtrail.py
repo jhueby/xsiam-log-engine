@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime, timezone
 from faker import Faker
 
-from sources.base_source import LogEvent, LogSource
+from sources.base_source import LogEvent, LogSource, TransportName
 from utils.faker_helpers import (
     AWS_REGIONS, AWS_ACCOUNT_IDS, AWS_SERVICES,
     random_external_ip, random_user, weighted_choice,
@@ -41,7 +41,7 @@ class AWSCloudTrailSource(LogSource):
     id = "aws_cloudtrail"
     display_name = "AWS CloudTrail"
     description = "AWS CloudTrail — CloudTrail JSON record format"
-    default_transport: str = "http"
+    default_transport: TransportName = "http"
     supported_transports = ["http"]
     default_eps = 5.0
     tags = ["cloud", "aws", "audit"]

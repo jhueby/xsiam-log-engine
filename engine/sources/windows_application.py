@@ -4,7 +4,7 @@ import json
 import random
 from datetime import datetime, timezone
 
-from sources.base_source import LogEvent, LogSource
+from sources.base_source import LogEvent, LogSource, TransportName
 from utils.faker_helpers import random_windows_host, weighted_choice
 
 _APPS = ["MsiInstaller", "Application Error", ".NET Runtime", "VSS", "MSSQLSERVER", "IIS-W3SVC"]
@@ -31,7 +31,7 @@ class WindowsApplicationSource(LogSource):
     id = "windows_application"
     display_name = "Windows Application"
     description = "Windows Application Event Log — MSI installs, crashes, .NET errors"
-    default_transport: str = "wec"
+    default_transport: TransportName = "wec"
     supported_transports = ["wec", "syslog"]
     default_eps = 1.0
     tags = ["windows", "application"]

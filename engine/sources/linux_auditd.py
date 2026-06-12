@@ -4,7 +4,7 @@ import random
 import time
 from datetime import datetime, timezone
 
-from sources.base_source import LogEvent, LogSource
+from sources.base_source import LogEvent, LogSource, TransportName
 from utils.faker_helpers import random_linux_host, random_user, random_internal_ip
 
 _SYSCALLS = ["execve", "open", "openat", "unlink", "chmod", "chown", "setuid", "ptrace", "socket", "connect"]
@@ -24,7 +24,7 @@ class LinuxAuditdSource(LogSource):
     id = "linux_auditd"
     display_name = "Linux Auditd"
     description = "Linux auditd — AVC denials, syscall events, user login audit records"
-    default_transport: str = "syslog"
+    default_transport: TransportName = "syslog"
     supported_transports = ["syslog"]
     default_eps = 5.0
     tags = ["linux", "audit", "security"]

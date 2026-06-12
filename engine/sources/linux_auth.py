@@ -3,7 +3,7 @@ from __future__ import annotations
 import random
 from datetime import datetime, timezone
 
-from sources.base_source import LogEvent, LogSource
+from sources.base_source import LogEvent, LogSource, TransportName
 from utils.faker_helpers import random_linux_host, random_internal_ip, random_external_ip, random_user, weighted_choice
 
 _EVENTS = [
@@ -38,7 +38,7 @@ class LinuxAuthSource(LogSource):
     id = "linux_auth"
     display_name = "Linux Auth"
     description = "Linux auth/PAM/sudo/sshd events"
-    default_transport: str = "syslog"
+    default_transport: TransportName = "syslog"
     supported_transports = ["syslog"]
     default_eps = 2.0
     tags = ["linux", "authentication", "syslog"]

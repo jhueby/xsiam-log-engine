@@ -38,8 +38,8 @@ async def test_source_generates_multiple_events(source_id):
     source = registry[source_id]
     events = [await source.generate() for _ in range(5)]
     raws = [e.raw for e in events]
-    # At least some should differ (probabilistic check)
-    assert len(set(raws)) > 1 or len(raws[0]) > 10, f"{source_id}: events appear identical"
+    # Timestamps alone make events differ; require real field variation too.
+    assert len(set(raws)) >= 3, f"{source_id}: expected >=3 unique events in 5, got {len(set(raws))}"
 
 
 @pytest.mark.asyncio

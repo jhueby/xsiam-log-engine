@@ -4,7 +4,7 @@ import random
 from datetime import datetime, timezone
 from faker import Faker
 
-from sources.base_source import LogEvent, LogSource
+from sources.base_source import LogEvent, LogSource, TransportName
 from utils.faker_helpers import random_internal_ip, random_user
 
 fake = Faker()
@@ -27,7 +27,7 @@ class ProxyBlueCoatSource(LogSource):
     id = "proxy_bluecoat"
     display_name = "Blue Coat / Symantec Proxy"
     description = "Blue Coat ProxySG — W3C Extended Log Format (ELFF)"
-    default_transport: str = "syslog"
+    default_transport: TransportName = "syslog"
     supported_transports = ["syslog"]
     default_eps = 20.0
     tags = ["proxy", "web", "network"]

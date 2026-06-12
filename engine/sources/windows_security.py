@@ -5,10 +5,11 @@ import random
 import uuid
 from datetime import datetime, timezone
 
-from sources.base_source import LogEvent, LogSource
+from sources.base_source import LogEvent, LogSource, TransportName
 from utils.faker_helpers import (
     DOMAIN,
     random_internal_ip,
+    random_sid,
     random_windows_host,
     random_user,
     weighted_choice,
@@ -44,7 +45,7 @@ class WindowsSecuritySource(LogSource):
     id = "windows_security"
     display_name = "Windows Security"
     description = "Windows Security Event Log — logon, process, object access, account management"
-    default_transport: str = "wec"
+    default_transport: TransportName = "wec"
     supported_transports = ["wec", "syslog"]
     default_eps = 5.0
     tags = ["windows", "authentication", "endpoint"]
@@ -67,7 +68,7 @@ class WindowsSecuritySource(LogSource):
                 "SubjectUserName": "SYSTEM" if event_id == 4624 else user,
                 "SubjectDomainName": domain,
                 "SubjectLogonId": f"0x{random.randint(0, 0xFFFFFF):x}",
-                "TargetUserSid": f"S-1-5-21-{random.randint(1000000,9999999)}-{random.randint(1000000,9999999)}-{random.randint(1000000,9999999)}-{random.randint(1000,9999)}",
+                "TargetUserSid": random_sid(),
                 "TargetUserName": user,
                 "TargetDomainName": domain,
                 "TargetLogonId": f"0x{random.randint(0, 0xFFFFFF):x}",
@@ -91,7 +92,7 @@ class WindowsSecuritySource(LogSource):
 
         elif event_id == 4688:
             event_data = {
-                "SubjectUserSid": f"S-1-5-21-{random.randint(1000000,9999999)}-500",
+                "SubjectUserSid": random_sid(500),
                 "SubjectUserName": user,
                 "SubjectDomainName": domain,
                 "SubjectLogonId": f"0x{random.randint(0, 0xFFFFFF):x}",
@@ -111,9 +112,9 @@ class WindowsSecuritySource(LogSource):
             event_data = {
                 "TargetUserName": user,
                 "TargetDomainName": domain,
-                "TargetSid": f"S-1-5-21-{random.randint(1000000,9999999)}-1001",
+                "TargetSid": random_sid(),
                 "ServiceName": "krbtgt",
-                "ServiceSid": "S-1-5-21-{random.randint(1000000,9999999)}-502",
+                "ServiceSid": random_sid(502),
                 "TicketOptions": "0x40810010",
                 "Status": "0x0",
                 "TicketEncryptionType": "0x12",

@@ -16,7 +16,7 @@ from transports.syslog_transport import SyslogTransport
 from transports.wec_transport import WECTransport
 from transports.base import Transport, SourceMeta
 from utils.logger import get_logger
-from utils.rate_limiter import TokenBucket
+from utils.rate_limiter import SlidingWindowCounter, TokenBucket
 
 logger = get_logger(__name__, settings.engine_log_level)
 
@@ -42,6 +42,7 @@ class SourceState:
         self.total_errors = 0
         self.last_event_ts: str | None = None
         self.start_time: float | None = None
+        self.eps_window = SlidingWindowCounter()
 
     def set_eps(self, eps: float) -> None:
         self.eps = eps
@@ -151,6 +152,7 @@ class Engine:
 
                 if result.success:
                     state.total_sent += 1
+                    state.eps_window.increment()
                 else:
                     state.total_errors += 1
                     log_entry["error"] = result.error
@@ -190,16 +192,12 @@ class Engine:
             if s.enabled:
                 per_transport[s.transport_name] = per_transport.get(s.transport_name, 0) + s.total_sent
 
-        elapsed = 1.0
-        active_sources = [s for s in self.sources.values() if s.enabled and s.start_time]
-        if active_sources:
-            elapsed = max(time.monotonic() - s.start_time for s in active_sources if s.start_time)
-            elapsed = max(elapsed, 1.0)
+        eps_actual = sum(s.eps_window.rate() for s in self.sources.values())
 
         return {
             "total_sent": total_sent,
             "total_errors": total_errors,
-            "eps_actual": round(total_sent / elapsed, 2) if elapsed > 0 else 0,
+            "eps_actual": round(eps_actual, 2),
             "per_transport": per_transport,
             "active_sources": sum(1 for s in self.sources.values() if s.enabled),
             "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -208,14 +206,11 @@ class Engine:
     def get_source_stats(self) -> list[dict]:
         result = []
         for sid, state in self.sources.items():
-            elapsed = 1.0
-            if state.start_time:
-                elapsed = max(time.monotonic() - state.start_time, 1.0)
             result.append({
                 "id": sid,
                 "enabled": state.enabled,
                 "eps_configured": state.eps,
-                "eps_actual": round(state.total_sent / elapsed, 2) if state.start_time else 0,
+                "eps_actual": round(state.eps_window.rate(), 2),
                 "total_sent": state.total_sent,
                 "total_errors": state.total_errors,
                 "last_event_ts": state.last_event_ts,

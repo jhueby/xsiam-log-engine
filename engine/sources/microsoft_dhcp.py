@@ -5,7 +5,7 @@ import random
 from datetime import datetime, timezone
 from faker import Faker
 
-from sources.base_source import LogEvent, LogSource
+from sources.base_source import LogEvent, LogSource, TransportName
 from utils.faker_helpers import random_internal_ip, random_windows_host
 
 fake = Faker()
@@ -28,7 +28,7 @@ class MicrosoftDHCPSource(LogSource):
     id = "microsoft_dhcp"
     display_name = "Microsoft DHCP Server"
     description = "Windows DHCP Server lease events"
-    default_transport: str = "wec"
+    default_transport: TransportName = "wec"
     supported_transports = ["wec", "syslog"]
     default_eps = 2.0
     tags = ["windows", "dhcp", "network"]

@@ -3,7 +3,7 @@ from __future__ import annotations
 import random
 from datetime import datetime, timezone
 
-from sources.base_source import LogEvent, LogSource
+from sources.base_source import LogEvent, LogSource, TransportName
 from utils.faker_helpers import random_internal_ip, random_external_ip, random_port, random_network_device
 
 _PROTOCOLS = {6: "TCP", 17: "UDP", 1: "ICMP", 47: "GRE", 50: "ESP"}
@@ -15,7 +15,7 @@ class NetFlowSource(LogSource):
     id = "netflow"
     display_name = "NetFlow v5/v9"
     description = "NetFlow v5/v9 records wrapped in syslog format"
-    default_transport: str = "syslog"
+    default_transport: TransportName = "syslog"
     supported_transports = ["syslog"]
     default_eps = 50.0
     tags = ["network", "netflow", "flow"]

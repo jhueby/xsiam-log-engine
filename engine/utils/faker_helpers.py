@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+import os
 import random
+import sys
 from faker import Faker
 
 fake = Faker()
-Faker.seed(0)
+# Deterministic output only under pytest or an explicit FAKER_SEED; in
+# production a fixed seed makes every hostname/IP/user repeat in the same
+# cycle, which is trivially detectable as synthetic data.
+if "pytest" in sys.modules or os.environ.get("FAKER_SEED"):
+    Faker.seed(int(os.environ.get("FAKER_SEED", "0")))
 
 INTERNAL_SUBNETS = [
     "10.0.{}.{}",
@@ -94,3 +100,16 @@ def random_well_known_port() -> int:
 
 def weighted_choice(choices: list, weights: list):
     return random.choices(choices, weights=weights, k=1)[0]
+
+
+# Windows domain SIDs have exactly 3 sub-authority parts after S-1-5-21,
+# shared by every principal in the domain; only the trailing RID varies.
+DOMAIN_SID = "S-1-5-21-{}-{}-{}".format(
+    random.randint(100000000, 999999999),
+    random.randint(100000000, 999999999),
+    random.randint(100000000, 999999999),
+)
+
+
+def random_sid(rid: int | None = None) -> str:
+    return f"{DOMAIN_SID}-{rid if rid is not None else random.randint(1000, 9999)}"
