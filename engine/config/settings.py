@@ -1,15 +1,16 @@
 from __future__ import annotations
 
+import os
 import yaml
 from pathlib import Path
 from typing import Literal
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# Absolute path so it resolves correctly regardless of CWD.
-# In Docker this lands inside the engine-config named volume (/app/config),
-# so saved settings survive container restarts without extra volume mounts.
-ENV_FILE = Path(__file__).parent / ".env"
+# ENGINE_ENV_FILE lets Docker point to /app/data/.env (named volume with only
+# data files, never code) so rebuilds don't get shadowed by a stale volume.
+# Local dev falls back to config/.env next to this file.
+ENV_FILE = Path(os.environ.get("ENGINE_ENV_FILE") or str(Path(__file__).parent / ".env"))
 
 
 class Settings(BaseSettings):

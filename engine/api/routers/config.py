@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from dotenv import set_key
@@ -12,9 +13,9 @@ from utils.logger import get_logger
 router = APIRouter(prefix="/api/config", tags=["config"])
 logger = get_logger(__name__)
 
-# Same path as settings.ENV_FILE — computed here so this module has no
-# cross-module import dependency that could break if settings changes.
-_ENV_FILE = Path(__file__).parent.parent.parent / "config" / ".env"
+_ENV_FILE = Path(os.environ.get("ENGINE_ENV_FILE") or str(
+    Path(__file__).parent.parent.parent / "config" / ".env"
+))
 
 
 @router.get("", response_model=TransportConfig)

@@ -8,9 +8,11 @@ services:
       # the API has no auth unless ENGINE_API_TOKEN is set, so don't expose it.
       - "127.0.0.1:${ENGINE_API_PORT:-8080}:8080"
     env_file: .env
+    environment:
+      ENGINE_ENV_FILE: /app/data/.env
     volumes:
-      - ./certs:/app/certs:ro
-      - engine-config:/app/config
+      - ./certs:/app/certs
+      - engine-data:/app/data
     restart: unless-stopped
     deploy:
       resources:
@@ -37,4 +39,4 @@ services:
           memory: 128M
 
 volumes:
-  engine-config:
+  engine-data:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from cryptography.hazmat.primitives.serialization import Encoding, NoEncryption, PrivateFormat
@@ -12,8 +13,10 @@ from config.settings import settings
 
 router = APIRouter(prefix="/api/certs", tags=["certs"])
 
-_ENV_FILE = Path(".env")
-_CERTS_DIR = Path("certs")
+_ENV_FILE = Path(os.environ.get("ENGINE_ENV_FILE") or str(
+    Path(__file__).parent.parent.parent / "config" / ".env"
+))
+_CERTS_DIR = Path(__file__).parent.parent.parent / "certs"
 
 
 class PfxUploadResult(BaseModel):
@@ -52,9 +55,11 @@ async def upload_pfx(
 
     settings.tls_client_cert_path = str(cert_path)
     settings.tls_client_key_path = str(key_path)
-    if _ENV_FILE.exists():
+    try:
         set_key(str(_ENV_FILE), "TLS_CLIENT_CERT_PATH", str(cert_path))
         set_key(str(_ENV_FILE), "TLS_CLIENT_KEY_PATH", str(key_path))
+    except Exception:
+        pass
 
     from main import get_engine
     get_engine()._wec.reset()
