@@ -76,7 +76,7 @@ async def update_config(update: TransportConfigUpdate) -> TransportConfig:
         settings.tls_client_key_path = update.tls_client_key_path
         env_updates["TLS_CLIENT_KEY_PATH"] = update.tls_client_key_path
 
-    if env_updates and _ENV_FILE.exists():
+    if env_updates:
         for env_key, env_val in env_updates.items():
             set_key(str(_ENV_FILE), env_key, env_val)
 
