@@ -28,9 +28,6 @@ async def get_config() -> TransportConfig:
         brokervm_syslog_port=settings.brokervm_syslog_port,
         brokervm_syslog_proto=settings.brokervm_syslog_proto,
         brokervm_wec_port=settings.brokervm_wec_port,
-        brokervm_wec_use_tls=settings.brokervm_wec_use_tls,
-        brokervm_wec_user=settings.brokervm_wec_user,
-        brokervm_wec_password="***" if settings.brokervm_wec_password else "",
         tls_ca_cert_path=settings.tls_ca_cert_path,
         tls_client_cert_path=settings.tls_client_cert_path,
         tls_client_key_path=settings.tls_client_key_path,
@@ -62,15 +59,6 @@ async def update_config(update: TransportConfigUpdate) -> TransportConfig:
     if update.brokervm_wec_port is not None:
         settings.brokervm_wec_port = update.brokervm_wec_port
         env_updates["BROKERVM_WEC_PORT"] = str(update.brokervm_wec_port)
-    if update.brokervm_wec_use_tls is not None:
-        settings.brokervm_wec_use_tls = update.brokervm_wec_use_tls
-        env_updates["BROKERVM_WEC_USE_TLS"] = str(update.brokervm_wec_use_tls).lower()
-    if update.brokervm_wec_user is not None:
-        settings.brokervm_wec_user = update.brokervm_wec_user
-        env_updates["BROKERVM_WEC_USER"] = update.brokervm_wec_user
-    if update.brokervm_wec_password is not None and update.brokervm_wec_password != "***":
-        settings.brokervm_wec_password = update.brokervm_wec_password
-        env_updates["BROKERVM_WEC_PASSWORD"] = update.brokervm_wec_password
     if update.tls_ca_cert_path is not None:
         settings.tls_ca_cert_path = update.tls_ca_cert_path
         env_updates["TLS_CA_CERT_PATH"] = update.tls_ca_cert_path

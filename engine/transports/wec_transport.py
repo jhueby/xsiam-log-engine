@@ -1,10 +1,10 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 import json
 import ssl
 import uuid
+import warnings
 from datetime import datetime, timezone
 from xml.sax.saxutils import escape
 
@@ -16,15 +16,12 @@ from utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-# WEF push-subscription envelope. The engine simulates Windows hosts pushing
-# events to the BrokerVM WEC listener using the Windows Event Forwarding (WEF)
-# protocol over WS-Management (MS-WSMV).
 _WSMAN_ENVELOPE = """<?xml version="1.0" encoding="UTF-8"?>
 <s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"
             xmlns:a="http://schemas.xmlsoap.org/ws/2004/08/addressing"
             xmlns:w="http://schemas.dmtf.org/wbem/wsman/1/wsman.xsd">
   <s:Header>
-    <a:To>http://{host}:{port}/wsman</a:To>
+    <a:To>https://{host}:{port}/wsman</a:To>
     <a:ReplyTo>
       <a:Address s:mustUnderstand="true">http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous</a:Address>
     </a:ReplyTo>
@@ -42,8 +39,25 @@ _WSMAN_ENVELOPE = """<?xml version="1.0" encoding="UTF-8"?>
 </s:Envelope>"""
 
 
-def _basic_auth(user: str, password: str) -> str:
-    return "Basic " + base64.b64encode(f"{user}:{password}".encode()).decode()
+def _build_ssl_context() -> ssl.SSLContext:
+    ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    # Accept TLS 1.0+ — the BrokerVM may negotiate 1.2 or 1.3 in practice;
+    # setting the minimum to 1.0 avoids rejecting older but still functional servers.
+    ctx.check_hostname = False  # must disable before setting CERT_NONE
+    ctx.verify_mode = ssl.CERT_NONE
+    try:
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", DeprecationWarning)
+            ctx.minimum_version = ssl.TLSVersion.TLSv1
+    except (ValueError, AttributeError):
+        pass  # system OpenSSL may disallow TLS 1.0; fall back to its default minimum
+    if settings.tls_ca_cert_path:
+        ctx.load_verify_locations(settings.tls_ca_cert_path)
+        ctx.verify_mode = ssl.CERT_REQUIRED
+        ctx.check_hostname = True
+    if settings.tls_client_cert_path and settings.tls_client_key_path:
+        ctx.load_cert_chain(settings.tls_client_cert_path, settings.tls_client_key_path)
+    return ctx
 
 
 def _build_event_xml(event: dict) -> str:
@@ -92,28 +106,28 @@ class WECTransport(Transport):
         self._client: httpx.AsyncClient | None = None
         self._connected_host: str | None = None
         self._connected_port: int | None = None
-        self._connected_tls: bool | None = None
+        self._connected_ca: str | None = None
+        self._connected_cert: str | None = None
 
     def _get_client(self) -> httpx.AsyncClient:
         host = settings.brokervm_host
         port = settings.brokervm_wec_port
-        use_tls = settings.brokervm_wec_use_tls
+        ca = settings.tls_ca_cert_path
+        cert = settings.tls_client_cert_path
         if (self._client is None or self._client.is_closed
                 or self._connected_host != host
                 or self._connected_port != port
-                or self._connected_tls != use_tls):
-            scheme = "https" if use_tls else "http"
-            verify: bool | str = False
-            if use_tls and settings.tls_ca_cert_path:
-                verify = settings.tls_ca_cert_path
+                or self._connected_ca != ca
+                or self._connected_cert != cert):
             self._client = httpx.AsyncClient(
-                base_url=f"{scheme}://{host}:{port}",
-                verify=verify,
+                base_url=f"https://{host}:{port}",
+                verify=_build_ssl_context(),
                 timeout=15.0,
             )
             self._connected_host = host
             self._connected_port = port
-            self._connected_tls = use_tls
+            self._connected_ca = ca
+            self._connected_cert = cert
         return self._client
 
     async def send(self, payload: str, source_meta: SourceMeta) -> SendResult:
@@ -134,20 +148,12 @@ class WECTransport(Transport):
         )
         encoded = envelope.encode("utf-8")
 
-        headers: dict[str, str] = {
-            "Content-Type": "application/soap+xml;charset=UTF-8",
-            "User-Agent": "WEC/5.0 WinRM",
-        }
-        user = settings.brokervm_wec_user
-        if user:
-            headers["Authorization"] = _basic_auth(user, settings.brokervm_wec_password)
-
         try:
             client = self._get_client()
             resp = await client.post(
                 "/wsman",
                 content=encoded,
-                headers=headers,
+                headers={"Content-Type": "application/soap+xml;charset=UTF-8", "User-Agent": "WEC/5.0 WinRM"},
             )
             if resp.status_code in (200, 201, 202):
                 return SendResult(success=True, bytes_sent=len(encoded))
@@ -156,7 +162,8 @@ class WECTransport(Transport):
             self._client = None
             self._connected_host = None
             self._connected_port = None
-            self._connected_tls = None
+            self._connected_ca = None
+            self._connected_cert = None
             logger.error({"event": "wec_send_error", "error": str(e), "source": source_meta.source_id})
             return SendResult(success=False, error=str(e))
 
@@ -172,7 +179,8 @@ class WECTransport(Transport):
         self._client = None
         self._connected_host = None
         self._connected_port = None
-        self._connected_tls = None
+        self._connected_ca = None
+        self._connected_cert = None
 
     async def close(self) -> None:
         if self._client and not self._client.is_closed:

@@ -65,9 +65,6 @@ export interface TransportConfig {
   brokervm_syslog_port: number
   brokervm_syslog_proto: 'udp' | 'tcp' | 'tls'
   brokervm_wec_port: number
-  brokervm_wec_use_tls: boolean
-  brokervm_wec_user: string
-  brokervm_wec_password: string  // masked as '***' on GET
   tls_ca_cert_path: string
   tls_client_cert_path: string
   tls_client_key_path: string

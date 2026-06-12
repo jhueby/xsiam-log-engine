@@ -11,7 +11,6 @@ export default function ConfigPanel({ config, onSaved }: Props) {
   const [form, setForm] = useState({
     ...config,
     xsiam_api_key: '',
-    brokervm_wec_password: '',
   })
   const [saving, setSaving] = useState(false)
   const [savedMsg, setSavedMsg] = useState('')
@@ -26,7 +25,6 @@ export default function ConfigPanel({ config, onSaved }: Props) {
     try {
       const payload = { ...form }
       if (!payload.xsiam_api_key) delete (payload as any).xsiam_api_key
-      if (!payload.brokervm_wec_password) delete (payload as any).brokervm_wec_password
       await updateConfig(payload)
       setSavedMsg('Saved & reloaded')
       onSaved()
@@ -77,17 +75,6 @@ export default function ConfigPanel({ config, onSaved }: Props) {
             </select>
           </div>
           <Field label="WEC Port" value={String(form.brokervm_wec_port)} onChange={v => set('brokervm_wec_port', parseInt(v))} type="number" />
-          <div className="flex items-center gap-3">
-            <label className="text-xs text-gray-500">WEC Use TLS</label>
-            <button
-              onClick={() => set('brokervm_wec_use_tls', !form.brokervm_wec_use_tls)}
-              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${form.brokervm_wec_use_tls ? 'bg-indigo-600' : 'bg-gray-300 dark:bg-gray-700'}`}
-            >
-              <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${form.brokervm_wec_use_tls ? 'translate-x-4' : 'translate-x-1'}`} />
-            </button>
-          </div>
-          <Field label="WEC Username" value={form.brokervm_wec_user} onChange={v => set('brokervm_wec_user', v)} placeholder="Leave blank if no auth required" />
-          <Field label="WEC Password" value={form.brokervm_wec_password} onChange={v => set('brokervm_wec_password', v)} type="password" placeholder="Leave blank to keep current" />
         </div>
       </section>
 
