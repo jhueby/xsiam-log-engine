@@ -1,0 +1,85 @@
+sources:
+  windows_security:
+    enabled: false
+    eps: 5.0
+    transport: wec
+  windows_system:
+    enabled: false
+    eps: 1.0
+    transport: wec
+  windows_application:
+    enabled: false
+    eps: 1.0
+    transport: wec
+  microsoft_ad:
+    enabled: false
+    eps: 3.0
+    transport: wec
+  microsoft_dns:
+    enabled: false
+    eps: 10.0
+    transport: wec
+  microsoft_dhcp:
+    enabled: false
+    eps: 2.0
+    transport: wec
+  microsoft_defender:
+    enabled: false
+    eps: 1.0
+    transport: wec
+  cisco_asa:
+    enabled: false
+    eps: 5.0
+    transport: syslog
+  cisco_meraki:
+    enabled: false
+    eps: 5.0
+    transport: syslog
+  palo_alto_ngfw:
+    enabled: false
+    eps: 10.0
+    transport: syslog
+  fortinet_fortigate:
+    enabled: false
+    eps: 5.0
+    transport: syslog
+  linux_syslog:
+    enabled: false
+    eps: 5.0
+    transport: syslog
+  linux_auth:
+    enabled: false
+    eps: 2.0
+    transport: syslog
+  linux_auditd:
+    enabled: false
+    eps: 5.0
+    transport: syslog
+  proxy_bluecoat:
+    enabled: false
+    eps: 20.0
+    transport: syslog
+  proxy_zscaler:
+    enabled: false
+    eps: 20.0
+    transport: syslog
+  crowdstrike_falcon:
+    enabled: false
+    eps: 3.0
+    transport: http
+  okta:
+    enabled: false
+    eps: 2.0
+    transport: http
+  azure_ad:
+    enabled: false
+    eps: 3.0
+    transport: http
+  aws_cloudtrail:
+    enabled: false
+    eps: 5.0
+    transport: http
+  netflow:
+    enabled: false
+    eps: 50.0
+    transport: syslog

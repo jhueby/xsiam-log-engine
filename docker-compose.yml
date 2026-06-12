@@ -1,0 +1,28 @@
+version: "3.9"
+
+services:
+  engine:
+    build: ./engine
+    ports:
+      - "${ENGINE_API_PORT:-8080}:8080"
+    env_file: .env
+    volumes:
+      - ./certs:/app/certs:ro
+      - engine-config:/app/config
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  gui:
+    build: ./gui
+    ports:
+      - "3000:80"
+    depends_on:
+      - engine
+    restart: unless-stopped
+
+volumes:
+  engine-config:
