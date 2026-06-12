@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Trash2 } from 'lucide-react'
-import { DiagEntry, DiagLevel, clearDiagLogs, getDiagLevel, getDiagLogs, setDiagLevel } from '../api/client'
+import { DiagEntry, DiagLevel, clearDiagLogs, getDiagLevel, getDiagLogs, setDiagLevel, sseUrl } from '../api/client'
 
 const LEVEL_OPTIONS: { value: DiagLevel; label: string; desc: string }[] = [
   { value: 'off', label: 'Off', desc: 'No diagnostic logging' },
@@ -40,7 +40,7 @@ export default function Diagnostics() {
 
   // SSE stream for new entries
   useEffect(() => {
-    const es = new EventSource('/api/diagnostics/stream')
+    const es = new EventSource(sseUrl('/api/diagnostics/stream'))
     es.onmessage = (e) => {
       try {
         const entry = JSON.parse(e.data) as DiagEntry

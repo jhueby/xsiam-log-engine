@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Copy, Check } from 'lucide-react'
+import { sseUrl } from '../api/client'
 
 interface LogEntry {
   source_id: string
@@ -24,7 +25,7 @@ export default function LogViewerComponent({ filterSource }: Props) {
 
   useEffect(() => {
     const url = filterSource ? `/api/logs/stream?source_id=${encodeURIComponent(filterSource)}` : '/api/logs/stream'
-    const es = new EventSource(url)
+    const es = new EventSource(sseUrl(url))
     es.onmessage = (e) => {
       try {
         const entry = JSON.parse(e.data) as LogEntry

@@ -5,6 +5,7 @@ import Configuration from './pages/Configuration'
 import Sources from './pages/Sources'
 import LogViewer from './pages/LogViewer'
 import Diagnostics from './pages/Diagnostics'
+import ErrorBoundary from './components/ErrorBoundary'
 
 const nav = [
   { to: '/', label: 'Dashboard', icon: Activity },
@@ -47,13 +48,15 @@ export default function App() {
           </div>
         </aside>
         <main className="flex-1 overflow-auto bg-gray-950">
-          <Routes>
-            <Route path="/" element={<Dashboard />} />
-            <Route path="/sources" element={<Sources />} />
-            <Route path="/config" element={<Configuration />} />
-            <Route path="/logs" element={<LogViewer />} />
-            <Route path="/diagnostics" element={<Diagnostics />} />
-          </Routes>
+          <ErrorBoundary>
+            <Routes>
+              <Route path="/" element={<Dashboard />} />
+              <Route path="/sources" element={<Sources />} />
+              <Route path="/config" element={<Configuration />} />
+              <Route path="/logs" element={<LogViewer />} />
+              <Route path="/diagnostics" element={<Diagnostics />} />
+            </Routes>
+          </ErrorBoundary>
         </main>
       </div>
     </BrowserRouter>

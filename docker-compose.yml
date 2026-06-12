@@ -4,12 +4,19 @@ services:
   engine:
     build: ./engine
     ports:
-      - "${ENGINE_API_PORT:-8080}:8080"
+      # Loopback only: the GUI reaches the engine over the internal network;
+      # the API has no auth unless ENGINE_API_TOKEN is set, so don't expose it.
+      - "127.0.0.1:${ENGINE_API_PORT:-8080}:8080"
     env_file: .env
     volumes:
       - ./certs:/app/certs:ro
       - engine-config:/app/config
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 512M
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]
       interval: 30s
@@ -23,6 +30,11 @@ services:
     depends_on:
       - engine
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 128M
 
 volumes:
   engine-config:

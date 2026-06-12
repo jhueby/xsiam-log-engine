@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react'
-import { getStats, StatsResponse } from '../api/client'
+import { getStats, sseUrl, StatsResponse } from '../api/client'
 import { Activity, Send, AlertCircle, Layers } from 'lucide-react'
 
 export default function StatsBar() {
   const [stats, setStats] = useState<StatsResponse | null>(null)
 
   useEffect(() => {
-    const es = new EventSource('/api/stats/stream')
+    const es = new EventSource(sseUrl('/api/stats/stream'))
     es.onmessage = (e) => {
       try { setStats(JSON.parse(e.data)) } catch {}
     }

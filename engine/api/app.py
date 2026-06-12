@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import secrets
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 
 from api.routers import sources, config, stats, control, diagnostics
 from main import get_engine
@@ -17,6 +18,8 @@ logger = get_logger(__name__, settings.engine_log_level)
 async def lifespan(app: FastAPI):
     engine = get_engine()
     logger.info({"event": "api_start", "sources": len(engine.sources)})
+    if not settings.engine_api_token:
+        logger.warning({"event": "api_auth_disabled", "hint": "set ENGINE_API_TOKEN to require authentication"})
     # Start any pre-enabled sources
     for sid, state in engine.sources.items():
         if state.enabled:
@@ -33,12 +36,20 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# No CORS middleware: the GUI is served same-origin (nginx in prod, vite proxy
+# in dev), so cross-origin access to this API is intentionally blocked.
+
+
+@app.middleware("http")
+async def require_api_token(request: Request, call_next):
+    token = settings.engine_api_token
+    if token and request.url.path.startswith("/api"):
+        # EventSource cannot set headers, so SSE clients pass ?token= instead.
+        presented = request.headers.get("x-engine-token") or request.query_params.get("token") or ""
+        if not secrets.compare_digest(presented, token):
+            return JSONResponse(status_code=401, content={"detail": "Invalid or missing API token"})
+    return await call_next(request)
+
 
 app.include_router(sources.router)
 app.include_router(config.router)

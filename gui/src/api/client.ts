@@ -1,8 +1,29 @@
 import axios from 'axios'
 
+const TOKEN_KEY = 'engine_api_token'
+
+export const getApiToken = () => localStorage.getItem(TOKEN_KEY) ?? ''
+export const setApiToken = (token: string) => {
+  if (token) localStorage.setItem(TOKEN_KEY, token)
+  else localStorage.removeItem(TOKEN_KEY)
+}
+
+// EventSource cannot set headers, so SSE endpoints take the token as a query param.
+export const sseUrl = (path: string) => {
+  const token = getApiToken()
+  if (!token) return path
+  return `${path}${path.includes('?') ? '&' : '?'}token=${encodeURIComponent(token)}`
+}
+
 export const api = axios.create({
   baseURL: '/api',
   timeout: 10000,
+})
+
+api.interceptors.request.use(config => {
+  const token = getApiToken()
+  if (token) config.headers['X-Engine-Token'] = token
+  return config
 })
 
 export interface SourceInfo {

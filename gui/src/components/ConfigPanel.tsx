@@ -11,12 +11,14 @@ export default function ConfigPanel({ config, onSaved }: Props) {
   const [form, setForm] = useState({ ...config, xsiam_api_key: '' })
   const [saving, setSaving] = useState(false)
   const [savedMsg, setSavedMsg] = useState('')
+  const [errorMsg, setErrorMsg] = useState('')
 
   const set = (key: keyof typeof form, value: string | number | boolean) =>
     setForm(prev => ({ ...prev, [key]: value }))
 
   const save = async () => {
     setSaving(true)
+    setErrorMsg('')
     try {
       const payload = { ...form }
       if (!payload.xsiam_api_key) delete (payload as any).xsiam_api_key
@@ -24,6 +26,9 @@ export default function ConfigPanel({ config, onSaved }: Props) {
       setSavedMsg('Saved & reloaded')
       onSaved()
       setTimeout(() => setSavedMsg(''), 3000)
+    } catch (err: any) {
+      const detail = err?.response?.data?.detail
+      setErrorMsg(typeof detail === 'string' ? detail : 'Failed to save configuration')
     } finally {
       setSaving(false)
     }
@@ -89,6 +94,7 @@ export default function ConfigPanel({ config, onSaved }: Props) {
           Save & Reload
         </button>
         {savedMsg && <span className="text-xs text-green-400">{savedMsg}</span>}
+        {errorMsg && <span className="text-xs text-red-400">{errorMsg}</span>}
       </div>
     </div>
   )

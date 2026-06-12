@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     engine_api_port: int = 8080
     engine_default_eps: float = 10.0
     engine_log_level: str = "INFO"
+    engine_api_token: str = ""  # when set, all /api/* requests must present it
 
 
 def load_defaults() -> dict:
