@@ -66,3 +66,18 @@ export const getHealth = () => api.get<HealthResponse>('/health')
 export const startAll = () => api.post('/control/start-all')
 export const stopAll = () => api.post('/control/stop-all')
 export const reloadConfig = () => api.post('/control/reload')
+
+export type DiagLevel = 'off' | 'errors' | 'info'
+
+export interface DiagEntry {
+  timestamp: string
+  level: string
+  logger: string
+  message: string
+  exception?: string
+}
+
+export const getDiagLogs = (limit = 200) => api.get<DiagEntry[]>('/diagnostics/logs', { params: { limit } })
+export const getDiagLevel = () => api.get<{ level: DiagLevel }>('/diagnostics/level')
+export const setDiagLevel = (level: DiagLevel) => api.put<{ level: DiagLevel }>('/diagnostics/level', { level })
+export const clearDiagLogs = () => api.delete('/diagnostics/logs')

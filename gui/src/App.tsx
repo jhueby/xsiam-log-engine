@@ -1,15 +1,17 @@
 import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom'
-import { Activity, Settings, List, Eye } from 'lucide-react'
+import { Activity, Settings, List, Eye, Terminal } from 'lucide-react'
 import Dashboard from './pages/Dashboard'
 import Configuration from './pages/Configuration'
 import Sources from './pages/Sources'
 import LogViewer from './pages/LogViewer'
+import Diagnostics from './pages/Diagnostics'
 
 const nav = [
   { to: '/', label: 'Dashboard', icon: Activity },
   { to: '/sources', label: 'Sources', icon: List },
   { to: '/config', label: 'Configuration', icon: Settings },
   { to: '/logs', label: 'Log Viewer', icon: Eye },
+  { to: '/diagnostics', label: 'Diagnostics', icon: Terminal },
 ]
 
 export default function App() {
@@ -50,6 +52,7 @@ export default function App() {
             <Route path="/sources" element={<Sources />} />
             <Route path="/config" element={<Configuration />} />
             <Route path="/logs" element={<LogViewer />} />
+            <Route path="/diagnostics" element={<Diagnostics />} />
           </Routes>
         </main>
       </div>

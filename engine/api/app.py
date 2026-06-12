@@ -5,7 +5,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from api.routers import sources, config, stats, control
+from api.routers import sources, config, stats, control, diagnostics
 from main import get_engine
 from utils.logger import get_logger
 from config.settings import settings
@@ -44,6 +44,7 @@ app.include_router(sources.router)
 app.include_router(config.router)
 app.include_router(stats.router)
 app.include_router(control.router)
+app.include_router(diagnostics.router)
 
 
 @app.get("/")
