@@ -27,7 +27,7 @@ export default function SourceGrid({ sources, onUpdate }: Props) {
           placeholder="Search sources..."
           value={search}
           onChange={e => setSearch(e.target.value)}
-          className="bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-indigo-500 w-48"
+          className="bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-3 py-1.5 text-sm focus:outline-none focus:border-indigo-500 w-48"
         />
         <div className="flex flex-wrap gap-1">
           {ALL_TAGS.map(tag => (
@@ -37,7 +37,7 @@ export default function SourceGrid({ sources, onUpdate }: Props) {
               className={`text-xs px-2 py-0.5 rounded transition-colors ${
                 activeTag === tag
                   ? 'bg-indigo-600 text-white'
-                  : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+                  : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-400 dark:hover:bg-gray-700'
               }`}
             >
               {tag}

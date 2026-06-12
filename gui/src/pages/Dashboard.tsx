@@ -41,8 +41,8 @@ export default function Dashboard() {
   return (
     <div className="flex flex-col h-full">
       <StatsBar />
-      <div className="flex items-center justify-between px-6 py-3 border-b border-gray-800">
-        <h1 className="font-semibold text-gray-200">Dashboard</h1>
+      <div className="flex items-center justify-between px-6 py-3 border-b border-gray-200 dark:border-gray-800">
+        <h1 className="font-semibold text-gray-900 dark:text-gray-200">Dashboard</h1>
         <div className="flex items-center gap-4">
           {health && (
             <div className="flex items-center gap-3 text-xs text-gray-500">
@@ -56,7 +56,7 @@ export default function Dashboard() {
           )}
           <button
             onClick={load}
-            className="p-1.5 hover:bg-gray-800 rounded text-gray-400"
+            className="p-1.5 hover:bg-gray-200 dark:hover:bg-gray-800 rounded text-gray-600 dark:text-gray-400"
             title="Refresh"
           >
             <RefreshCw size={14} />
@@ -64,14 +64,14 @@ export default function Dashboard() {
           <button
             onClick={handleStartAll}
             disabled={loading}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-green-700 hover:bg-green-600 disabled:opacity-50 rounded text-xs transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-green-700 hover:bg-green-600 disabled:opacity-50 rounded text-xs text-white transition-colors"
           >
             <Play size={12} /> Start All
           </button>
           <button
             onClick={handleStopAll}
             disabled={loading}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-red-800 hover:bg-red-700 disabled:opacity-50 rounded text-xs transition-colors"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-red-800 hover:bg-red-700 disabled:opacity-50 rounded text-xs text-white transition-colors"
           >
             <Square size={12} /> Stop All
           </button>

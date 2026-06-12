@@ -9,15 +9,15 @@ const LEVEL_OPTIONS: { value: DiagLevel; label: string; desc: string }[] = [
 ]
 
 const LEVEL_COLOR: Record<string, string> = {
-  ERROR: 'text-red-400 bg-red-950',
-  CRITICAL: 'text-red-300 bg-red-950',
-  WARNING: 'text-yellow-400 bg-yellow-950',
-  INFO: 'text-blue-400 bg-blue-950',
-  DEBUG: 'text-gray-500 bg-gray-900',
+  ERROR: 'text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-950',
+  CRITICAL: 'text-red-700 dark:text-red-300 bg-red-100 dark:bg-red-950',
+  WARNING: 'text-yellow-600 dark:text-yellow-400 bg-yellow-100 dark:bg-yellow-950',
+  INFO: 'text-blue-600 dark:text-blue-400 bg-blue-100 dark:bg-blue-950',
+  DEBUG: 'text-gray-500 bg-white dark:bg-gray-900',
 }
 
 function levelBadge(level: string) {
-  const cls = LEVEL_COLOR[level] ?? 'text-gray-400 bg-gray-900'
+  const cls = LEVEL_COLOR[level] ?? 'text-gray-600 dark:text-gray-400 bg-white dark:bg-gray-900'
   return (
     <span className={`inline-block px-1.5 py-0.5 rounded text-xs font-mono font-semibold ${cls}`}>
       {level}
@@ -72,11 +72,11 @@ export default function Diagnostics() {
   return (
     <div className="flex flex-col h-screen">
       {/* Header */}
-      <div className="flex items-center gap-6 px-6 py-3 border-b border-gray-800 bg-gray-950">
-        <h1 className="font-semibold text-gray-200">Diagnostics</h1>
+      <div className="flex items-center gap-6 px-6 py-3 border-b border-gray-200 dark:border-gray-800 bg-gray-100 dark:bg-gray-950">
+        <h1 className="font-semibold text-gray-900 dark:text-gray-200">Diagnostics</h1>
 
         {/* Level selector */}
-        <div className="flex items-center gap-1 bg-gray-900 rounded p-1">
+        <div className="flex items-center gap-1 bg-white dark:bg-gray-900 rounded p-1">
           {LEVEL_OPTIONS.map(opt => (
             <button
               key={opt.value}
@@ -85,11 +85,11 @@ export default function Diagnostics() {
               className={`px-3 py-1 rounded text-xs font-medium transition-colors ${
                 level === opt.value
                   ? opt.value === 'off'
-                    ? 'bg-gray-700 text-gray-300'
+                    ? 'bg-gray-300 dark:bg-gray-700 text-gray-700 dark:text-gray-300'
                     : opt.value === 'errors'
                     ? 'bg-red-800 text-red-100'
                     : 'bg-blue-800 text-blue-100'
-                  : 'text-gray-500 hover:text-gray-300'
+                  : 'text-gray-500 hover:text-gray-700 dark:hover:text-gray-300'
               }`}
             >
               {opt.label}
@@ -98,7 +98,7 @@ export default function Diagnostics() {
         </div>
 
         <div className="ml-auto flex items-center gap-4">
-          <label className="flex items-center gap-2 text-xs text-gray-400 cursor-pointer">
+          <label className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400 cursor-pointer">
             <input
               type="checkbox"
               checked={autoScroll}
@@ -109,7 +109,7 @@ export default function Diagnostics() {
           </label>
           <button
             onClick={handleClear}
-            className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-red-400 transition-colors"
+            className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-red-600 dark:hover:text-red-400 transition-colors"
           >
             <Trash2 size={12} />
             Clear
@@ -119,7 +119,7 @@ export default function Diagnostics() {
 
       {/* Status bar */}
       {level === 'off' && (
-        <div className="px-6 py-2 bg-yellow-950 border-b border-yellow-800 text-yellow-300 text-xs">
+        <div className="px-6 py-2 bg-yellow-100 dark:bg-yellow-950 border-b border-yellow-300 dark:border-yellow-800 text-yellow-800 dark:text-yellow-300 text-xs">
           Diagnostic logging is <strong>Off</strong>. Set level to Errors or Informational to capture engine activity.
         </div>
       )}
@@ -127,26 +127,26 @@ export default function Diagnostics() {
       {/* Log entries */}
       <div className="flex-1 overflow-auto font-mono text-xs p-2 space-y-0.5">
         {entries.length === 0 ? (
-          <div className="flex items-center justify-center h-full text-gray-600">
+          <div className="flex items-center justify-center h-full text-gray-500 dark:text-gray-600">
             {level === 'off' ? 'Logging is off — no entries captured.' : 'No diagnostic entries yet.'}
           </div>
         ) : (
           entries.map((entry, i) => (
             <div
               key={i}
-              className={`flex gap-3 p-2 rounded hover:bg-gray-900 ${
+              className={`flex gap-3 p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-900 ${
                 entry.level === 'ERROR' || entry.level === 'CRITICAL' ? 'border-l-2 border-red-700' : ''
               }`}
             >
-              <div className="flex-shrink-0 text-gray-600 w-24 truncate">
+              <div className="flex-shrink-0 text-gray-500 dark:text-gray-600 w-24 truncate">
                 {new Date(entry.timestamp).toLocaleTimeString()}
               </div>
               <div className="flex-shrink-0 w-6">{levelBadge(entry.level)}</div>
-              <div className="flex-shrink-0 text-indigo-400 w-28 truncate">{entry.logger}</div>
-              <div className="flex-1 min-w-0 text-gray-300 whitespace-pre-wrap break-all">
+              <div className="flex-shrink-0 text-indigo-600 dark:text-indigo-400 w-28 truncate">{entry.logger}</div>
+              <div className="flex-1 min-w-0 text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-all">
                 {entry.message}
                 {entry.exception && (
-                  <pre className="mt-1 text-red-400 text-xs whitespace-pre-wrap">{entry.exception}</pre>
+                  <pre className="mt-1 text-red-600 dark:text-red-400 text-xs whitespace-pre-wrap">{entry.exception}</pre>
                 )}
               </div>
             </div>
@@ -156,8 +156,8 @@ export default function Diagnostics() {
       </div>
 
       {/* Footer */}
-      <div className="px-6 py-2 border-t border-gray-800 bg-gray-950 text-xs text-gray-600">
-        {entries.length} entries &nbsp;·&nbsp; capturing: <span className="text-gray-400">{level}</span>
+      <div className="px-6 py-2 border-t border-gray-200 dark:border-gray-800 bg-gray-100 dark:bg-gray-950 text-xs text-gray-500 dark:text-gray-600">
+        {entries.length} entries &nbsp;·&nbsp; capturing: <span className="text-gray-600 dark:text-gray-400">{level}</span>
       </div>
     </div>
   )

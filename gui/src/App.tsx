@@ -6,6 +6,7 @@ import Sources from './pages/Sources'
 import LogViewer from './pages/LogViewer'
 import Diagnostics from './pages/Diagnostics'
 import ErrorBoundary from './components/ErrorBoundary'
+import ThemeToggle from './components/ThemeToggle'
 
 const nav = [
   { to: '/', label: 'Dashboard', icon: Activity },
@@ -19,8 +20,8 @@ export default function App() {
   return (
     <BrowserRouter>
       <div className="flex h-screen overflow-hidden">
-        <aside className="w-56 bg-gray-900 border-r border-gray-800 flex flex-col">
-          <div className="p-4 border-b border-gray-800">
+        <aside className="w-56 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-800 flex flex-col">
+          <div className="p-4 border-b border-gray-200 dark:border-gray-800">
             <div className="text-brand-500 font-bold text-lg tracking-tight">XSIAM</div>
             <div className="text-gray-500 text-xs">Log Engine v1.0</div>
           </div>
@@ -34,7 +35,7 @@ export default function App() {
                   `flex items-center gap-3 px-3 py-2 rounded text-sm transition-colors ${
                     isActive
                       ? 'bg-brand-600 text-white'
-                      : 'text-gray-400 hover:bg-gray-800 hover:text-gray-100'
+                      : 'text-gray-600 dark:text-gray-400 hover:bg-gray-200 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-100'
                   }`
                 }
               >
@@ -43,11 +44,14 @@ export default function App() {
               </NavLink>
             ))}
           </nav>
-          <div className="p-4 border-t border-gray-800 text-xs text-gray-600">
+          <div className="p-2 border-t border-gray-200 dark:border-gray-800">
+            <ThemeToggle />
+          </div>
+          <div className="px-4 pb-4 text-xs text-gray-500 dark:text-gray-600">
             Palo Alto Networks
           </div>
         </aside>
-        <main className="flex-1 overflow-auto bg-gray-950">
+        <main className="flex-1 overflow-auto bg-gray-100 dark:bg-gray-950">
           <ErrorBoundary>
             <Routes>
               <Route path="/" element={<Dashboard />} />

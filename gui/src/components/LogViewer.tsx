@@ -54,41 +54,41 @@ export default function LogViewerComponent({ filterSource }: Props) {
   }
 
   const TRANSPORT_COLOR: Record<string, string> = {
-    http: 'text-purple-400',
-    syslog: 'text-yellow-400',
-    wec: 'text-cyan-400',
+    http: 'text-purple-600 dark:text-purple-400',
+    syslog: 'text-yellow-600 dark:text-yellow-400',
+    wec: 'text-cyan-600 dark:text-cyan-400',
   }
 
   return (
     <div className="flex flex-col h-full">
-      <div className="flex items-center gap-4 p-3 border-b border-gray-800 bg-gray-900">
-        <span className="text-xs text-gray-400">{logs.length} events</span>
-        <label className="flex items-center gap-2 text-xs text-gray-400 cursor-pointer">
+      <div className="flex items-center gap-4 p-3 border-b border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900">
+        <span className="text-xs text-gray-600 dark:text-gray-400">{logs.length} events</span>
+        <label className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400 cursor-pointer">
           <input type="checkbox" checked={rawView} onChange={e => setRawView(e.target.checked)} className="accent-indigo-500" />
           Raw
         </label>
-        <label className="flex items-center gap-2 text-xs text-gray-400 cursor-pointer">
+        <label className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400 cursor-pointer">
           <input type="checkbox" checked={autoScroll} onChange={e => setAutoScroll(e.target.checked)} className="accent-indigo-500" />
           Auto-scroll
         </label>
         <button
           onClick={() => setLogs([])}
-          className="text-xs text-gray-500 hover:text-gray-300 ml-auto"
+          className="text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 ml-auto"
         >
           Clear
         </button>
       </div>
       <div className="flex-1 overflow-auto font-mono text-xs p-2 space-y-1">
         {logs.map((log, i) => (
-          <div key={i} className={`group flex gap-2 p-2 rounded hover:bg-gray-900 ${!log.success ? 'border-l-2 border-red-700' : ''}`}>
-            <div className="flex-shrink-0 text-gray-600 w-24 truncate">{new Date(log.timestamp).toLocaleTimeString()}</div>
-            <div className={`flex-shrink-0 w-20 truncate ${TRANSPORT_COLOR[log.transport] || 'text-gray-400'}`}>{log.source_id}</div>
-            <div className="flex-1 min-w-0 text-gray-300 whitespace-pre-wrap break-all">{formatEntry(log.raw)}</div>
+          <div key={i} className={`group flex gap-2 p-2 rounded hover:bg-gray-100 dark:hover:bg-gray-900 ${!log.success ? 'border-l-2 border-red-700' : ''}`}>
+            <div className="flex-shrink-0 text-gray-500 dark:text-gray-600 w-24 truncate">{new Date(log.timestamp).toLocaleTimeString()}</div>
+            <div className={`flex-shrink-0 w-20 truncate ${TRANSPORT_COLOR[log.transport] || 'text-gray-600 dark:text-gray-400'}`}>{log.source_id}</div>
+            <div className="flex-1 min-w-0 text-gray-700 dark:text-gray-300 whitespace-pre-wrap break-all">{formatEntry(log.raw)}</div>
             <button
               onClick={() => copy(i, log.raw)}
               className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"
             >
-              {copiedIdx === i ? <Check size={12} className="text-green-400" /> : <Copy size={12} className="text-gray-500" />}
+              {copiedIdx === i ? <Check size={12} className="text-green-600 dark:text-green-400" /> : <Copy size={12} className="text-gray-500" />}
             </button>
           </div>
         ))}

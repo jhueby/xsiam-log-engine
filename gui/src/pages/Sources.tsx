@@ -18,11 +18,11 @@ export default function Sources() {
 
   return (
     <div className="p-6 space-y-6">
-      <h1 className="font-semibold text-gray-200">Sources ({sources.length})</h1>
+      <h1 className="font-semibold text-gray-900 dark:text-gray-200">Sources ({sources.length})</h1>
 
       {active.length > 0 && (
         <section>
-          <h2 className="text-xs text-green-400 uppercase tracking-widest mb-3">Active ({active.length})</h2>
+          <h2 className="text-xs text-green-600 dark:text-green-400 uppercase tracking-widest mb-3">Active ({active.length})</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
             {active.map(s => <SourceCard key={s.id} source={s} onUpdate={load} />)}
           </div>

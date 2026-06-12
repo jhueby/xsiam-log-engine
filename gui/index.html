@@ -5,6 +5,12 @@
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>XSIAM Log Engine</title>
+    <script>
+      // Apply theme before first paint to avoid a flash of the wrong mode.
+      const theme = localStorage.getItem('theme')
+        ?? (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
+      document.documentElement.classList.toggle('dark', theme === 'dark')
+    </script>
   </head>
   <body>
     <div id="root"></div>
