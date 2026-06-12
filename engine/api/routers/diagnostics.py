@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 
@@ -38,10 +38,12 @@ async def clear_logs() -> dict:
     return {"ok": True}
 
 
-async def _diag_generator():
+async def _diag_generator(request: Request):
     buf = get_buffer()
     last_seq = buf.current_seq  # start from now; initial history loaded via REST
     while True:
+        if await request.is_disconnected():
+            break
         new_entries = buf.get_after(last_seq)
         for entry in new_entries:
             yield {"data": json.dumps(entry)}
@@ -51,5 +53,5 @@ async def _diag_generator():
 
 
 @router.get("/stream")
-async def stream_diagnostics() -> EventSourceResponse:
-    return EventSourceResponse(_diag_generator())
+async def stream_diagnostics(request: Request) -> EventSourceResponse:
+    return EventSourceResponse(_diag_generator(request))

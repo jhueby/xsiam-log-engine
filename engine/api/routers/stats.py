@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 from sse_starlette.sse import EventSourceResponse
 
@@ -26,14 +26,16 @@ async def get_source_stats() -> list[dict]:
     return engine.get_source_stats()
 
 
-async def _stats_generator():
+async def _stats_generator(request: Request):
     engine = get_engine()
     while True:
+        if await request.is_disconnected():
+            break
         data = engine.get_stats()
         yield {"data": json.dumps(data)}
         await asyncio.sleep(1)
 
 
 @router.get("/stream")
-async def stream_stats() -> EventSourceResponse:
-    return EventSourceResponse(_stats_generator())
+async def stream_stats(request: Request) -> EventSourceResponse:
+    return EventSourceResponse(_stats_generator(request))

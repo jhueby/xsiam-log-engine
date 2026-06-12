@@ -139,6 +139,10 @@ class SyslogTransport(Transport):
         except Exception:
             return False
 
+    def reset(self) -> None:
+        self._udp_transport = None
+        self._tcp_writer = None
+
     async def close(self) -> None:
         if self._udp_transport:
             self._udp_transport.close()

@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 from sse_starlette.sse import EventSourceResponse
 
@@ -52,10 +52,12 @@ async def health_check() -> HealthResponse:
     )
 
 
-async def _log_generator(source_id: str | None = None):
+async def _log_generator(request: Request, source_id: str | None = None):
     engine = get_engine()
     last_len = 0
     while True:
+        if await request.is_disconnected():
+            break
         logs = engine.get_recent_logs(100)
         if source_id:
             logs = [l for l in logs if l.get("source_id") == source_id]
@@ -67,5 +69,5 @@ async def _log_generator(source_id: str | None = None):
 
 
 @router.get("/logs/stream")
-async def stream_logs(source_id: str | None = None) -> EventSourceResponse:
-    return EventSourceResponse(_log_generator(source_id))
+async def stream_logs(request: Request, source_id: str | None = None) -> EventSourceResponse:
+    return EventSourceResponse(_log_generator(request, source_id))

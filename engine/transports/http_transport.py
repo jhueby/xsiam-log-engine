@@ -139,6 +139,9 @@ class HTTPTransport(Transport):
         except Exception:
             return False
 
+    def reset(self) -> None:
+        self._client = None
+
     async def close(self) -> None:
         if self._client and not self._client.is_closed:
             await self._client.aclose()

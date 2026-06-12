@@ -23,6 +23,9 @@ logger = get_logger(__name__, settings.engine_log_level)
 LOG_RING_SIZE = 500
 
 
+_MAX_CONSECUTIVE_ERRORS = 5
+
+
 class SourceState:
     def __init__(self, source: LogSource, eps: float, transport_name: str) -> None:
         self.source = source
@@ -32,6 +35,7 @@ class SourceState:
         self.bucket = TokenBucket(eps)
         self._stop_event = asyncio.Event()
         self._task: asyncio.Task | None = None
+        self._lock = asyncio.Lock()
 
         # Stats
         self.total_sent = 0
@@ -79,29 +83,37 @@ class Engine:
 
     async def start_source(self, source_id: str) -> None:
         state = self.sources.get(source_id)
-        if not state or state.enabled:
+        if not state:
             return
-        state.enabled = True
-        state._stop_event.clear()
-        state._task = asyncio.create_task(self._run_source(state))
+        async with state._lock:
+            if state.enabled:
+                return
+            state.enabled = True
+            state._stop_event.clear()
+            state._task = asyncio.create_task(self._run_source(state))
         logger.info({"event": "source_started", "source": source_id})
 
     async def stop_source(self, source_id: str) -> None:
         state = self.sources.get(source_id)
-        if not state or not state.enabled:
+        if not state:
             return
-        state.enabled = False
-        state._stop_event.set()
-        if state._task:
-            state._task.cancel()
+        async with state._lock:
+            if not state.enabled:
+                return
+            state.enabled = False
+            state._stop_event.set()
+            task = state._task
+        if task:
+            task.cancel()
             try:
-                await state._task
+                await task
             except asyncio.CancelledError:
                 pass
         logger.info({"event": "source_stopped", "source": source_id})
 
     async def _run_source(self, state: SourceState) -> None:
         state.start_time = time.monotonic()
+        consecutive_errors = 0
         while not state._stop_event.is_set():
             await state.bucket.acquire()
             if state._stop_event.is_set():
@@ -143,13 +155,24 @@ class Engine:
                     state.total_errors += 1
                     log_entry["error"] = result.error
 
+                consecutive_errors = 0
                 self._log_ring.append(log_entry)
 
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
                 state.total_errors += 1
+                consecutive_errors += 1
                 logger.error({"event": "generate_error", "source": state.source.id, "error": str(exc)})
+                if consecutive_errors >= _MAX_CONSECUTIVE_ERRORS:
+                    logger.error({
+                        "event": "source_auto_disabled",
+                        "source": state.source.id,
+                        "reason": f"{_MAX_CONSECUTIVE_ERRORS} consecutive errors",
+                    })
+                    state.enabled = False
+                    state._task = None
+                    break
 
     async def start_all(self) -> None:
         for sid in self.sources:
