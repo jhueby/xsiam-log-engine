@@ -25,16 +25,29 @@ _LOG_TYPE_CONTENT_TYPE = {
 
 
 def _build_body(payload: str, log_type: str, source_id: str) -> bytes:
+    stripped = payload.rstrip("\n")
+
     if log_type == "json":
         try:
-            event = json.loads(payload) if isinstance(payload, str) else payload
+            event = json.loads(stripped)
         except json.JSONDecodeError:
-            event = {"raw": payload}
+            event = {"raw": stripped}
         if isinstance(event, dict):
             event = {"simulated_log_source": source_id, **event}
-        return json.dumps([event]).encode("utf-8")
-    # raw / cef / leef: prepend simulated_log_source so XSIAM can extract it
-    stripped = payload.rstrip("\n")
+        return (json.dumps(event) + "\n").encode("utf-8")
+
+    # raw / cef / leef
+    # If the payload is already a JSON object, inject simulated_log_source as
+    # a field so the JSON structure stays valid (XSIAM auto-detects JSON and
+    # rejects a bare key=value prefix in front of a JSON body).
+    try:
+        event = json.loads(stripped)
+        if isinstance(event, dict):
+            event = {"simulated_log_source": source_id, **event}
+            return (json.dumps(event) + "\n").encode("utf-8")
+    except (json.JSONDecodeError, ValueError):
+        pass
+    # Plain-text log (CEF, LEEF, syslog-style): prefix with key=value pair
     return f'simulated_log_source="{source_id}" {stripped}\n'.encode("utf-8")
 
 
@@ -69,6 +82,14 @@ class HTTPTransport(Transport):
 
         src = source_meta.source_id
         url = settings.xsiam_url
+        logger.info({
+            "event": "xsiam_request",
+            "source": src,
+            "log_type": source_meta.http_log_type,
+            "compression": source_meta.http_compression,
+            "bytes": len(encoded),
+            "preview": body[:300].decode("utf-8", errors="replace"),
+        })
         for attempt in range(MAX_RETRIES):
             try:
                 client = self._get_client()
