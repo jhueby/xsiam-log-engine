@@ -1,14 +1,20 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from dotenv import set_key
 from fastapi import APIRouter
 
 from api.models import TransportConfig, TransportConfigUpdate
-from config.settings import settings, ENV_FILE
+from config.settings import settings
 from utils.logger import get_logger
 
 router = APIRouter(prefix="/api/config", tags=["config"])
 logger = get_logger(__name__)
+
+# Same path as settings.ENV_FILE — computed here so this module has no
+# cross-module import dependency that could break if settings changes.
+_ENV_FILE = Path(__file__).parent.parent.parent / "config" / ".env"
 
 
 @router.get("", response_model=TransportConfig)
@@ -77,10 +83,10 @@ async def update_config(update: TransportConfigUpdate) -> TransportConfig:
     if env_updates:
         try:
             for env_key, env_val in env_updates.items():
-                set_key(str(ENV_FILE), env_key, env_val)
-            logger.info({"event": "config_saved", "path": str(ENV_FILE), "keys": list(env_updates)})
+                set_key(str(_ENV_FILE), env_key, env_val)
+            logger.info({"event": "config_saved", "path": str(_ENV_FILE), "keys": list(env_updates)})
         except Exception as e:
-            logger.warning({"event": "config_save_failed", "path": str(ENV_FILE), "error": str(e)})
+            logger.warning({"event": "config_save_failed", "path": str(_ENV_FILE), "error": str(e)})
 
     from main import get_engine
     engine = get_engine()
