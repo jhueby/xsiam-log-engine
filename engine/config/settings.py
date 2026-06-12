@@ -6,10 +6,15 @@ from typing import Literal
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Absolute path so it resolves correctly regardless of CWD.
+# In Docker this lands inside the engine-config named volume (/app/config),
+# so saved settings survive container restarts without extra volume mounts.
+ENV_FILE = Path(__file__).parent / ".env"
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_file=str(ENV_FILE),
         env_file_encoding="utf-8",
         case_sensitive=False,
         extra="ignore",

@@ -32,8 +32,17 @@ export default function ConfigPanel({ config, onSaved }: Props) {
       onSaved()
       setTimeout(() => setSavedMsg(''), 3000)
     } catch (err: any) {
-      const detail = err?.response?.data?.detail
-      setErrorMsg(typeof detail === 'string' ? detail : 'Failed to save configuration')
+      if (!err?.response) {
+        setErrorMsg('Cannot reach engine — check that the engine container is running')
+      } else {
+        const status = err.response.status
+        const detail = err.response.data?.detail
+        setErrorMsg(
+          typeof detail === 'string'
+            ? `HTTP ${status}: ${detail}`
+            : `HTTP ${status} — failed to save configuration`
+        )
+      }
     } finally {
       setSaving(false)
     }

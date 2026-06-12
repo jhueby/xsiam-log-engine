@@ -9,7 +9,7 @@ from fastapi.responses import JSONResponse
 from api.routers import sources, config, stats, control, diagnostics, certs
 from main import get_engine
 from utils.logger import get_logger
-from config.settings import settings
+from config.settings import settings, ENV_FILE
 
 logger = get_logger(__name__, settings.engine_log_level)
 
@@ -17,7 +17,7 @@ logger = get_logger(__name__, settings.engine_log_level)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     engine = get_engine()
-    logger.info({"event": "api_start", "sources": len(engine.sources)})
+    logger.info({"event": "api_start", "sources": len(engine.sources), "env_file": str(ENV_FILE), "env_file_exists": ENV_FILE.exists()})
     if not settings.engine_api_token:
         logger.warning({"event": "api_auth_disabled", "hint": "set ENGINE_API_TOKEN to require authentication"})
     # Start any pre-enabled sources
