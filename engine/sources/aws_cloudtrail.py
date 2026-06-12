@@ -45,6 +45,7 @@ class AWSCloudTrailSource(LogSource):
     supported_transports = ["http"]
     default_eps = 5.0
     tags = ["cloud", "aws", "audit"]
+    xsiam_dataset: str = "aws_cloudtrail_raw"
 
     async def generate(self) -> LogEvent:
         event_name, _ = weighted_choice(_EVENT_NAMES, [w for _, w in _EVENT_NAMES])

@@ -26,6 +26,9 @@ class LogSource(ABC):
     supported_transports: list[TransportName]
     default_eps: float
     tags: list[str]
+    syslog_facility: int = 1   # RFC 5424 facility for non-pre-framed syslog sources
+    syslog_severity: int = 6   # RFC 5424 severity for non-pre-framed syslog sources
+    xsiam_dataset: str = ""    # XSIAM dataset name; empty falls back to settings.xsiam_dataset
 
     @abstractmethod
     async def generate(self) -> LogEvent: ...

@@ -119,6 +119,7 @@ class FortinetFortiGateSource(LogSource):
     supported_transports = ["syslog"]
     default_eps = 5.0
     tags = ["network", "firewall", "fortinet"]
+    syslog_facility: int = 16  # local0
 
     async def generate(self) -> LogEvent:
         log_type = weighted_choice(_LOG_TYPES, _TYPE_WEIGHTS)

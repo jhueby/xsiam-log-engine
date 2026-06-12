@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import random
+import time
 from datetime import datetime, timezone
 
 from sources.base_source import LogEvent, LogSource
@@ -31,7 +32,7 @@ class LinuxAuditdSource(LogSource):
     async def generate(self) -> LogEvent:
         host = random_linux_host()
         audit_type = random.choices(_AUDIT_TYPES, weights=_TYPE_WEIGHTS)[0]
-        ts_epoch = f"{__import__('time').time():.3f}"
+        ts_epoch = f"{time.time():.3f}"
         serial = random.randint(1000, 999999)
         pid = random.randint(100, 65535)
         uid = random.randint(0, 60000)

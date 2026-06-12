@@ -23,7 +23,7 @@ export default function LogViewerComponent({ filterSource }: Props) {
   const [autoScroll, setAutoScroll] = useState(true)
 
   useEffect(() => {
-    const url = filterSource ? `/api/logs/stream?source_id=${filterSource}` : '/api/logs/stream'
+    const url = filterSource ? `/api/logs/stream?source_id=${encodeURIComponent(filterSource)}` : '/api/logs/stream'
     const es = new EventSource(url)
     es.onmessage = (e) => {
       try {

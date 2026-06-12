@@ -14,6 +14,16 @@ logger = get_logger(__name__)
 SYSLOG_FACILITY_USER = 1
 SYSLOG_SEVERITY_INFO = 6
 
+# Formats where the source already embeds the syslog priority header (<PRI>...).
+# The transport sends these bytes directly without adding RFC 5424 framing.
+_PRE_FRAMED_FORMATS = frozenset({
+    "syslog_rfc3164",
+    "syslog_rfc5424",
+    "syslog_audit",
+    "syslog_meraki",
+    "syslog_netflow",
+})
+
 
 def _rfc5424(msg: str, hostname: str = "engine", app_name: str = "log-engine",
              facility: int = SYSLOG_FACILITY_USER, severity: int = SYSLOG_SEVERITY_INFO) -> bytes:
@@ -81,8 +91,19 @@ class SyslogTransport(Transport):
         return self._tcp_writer
 
     async def send(self, payload: str, source_meta: SourceMeta) -> SendResult:
-        hostname = source_meta.source_id.replace("_", "-")
-        framed = _rfc5424(payload, hostname=hostname, app_name=source_meta.source_id)
+        if source_meta.format in _PRE_FRAMED_FORMATS:
+            # Source already embedded syslog priority header — send bytes as-is
+            framed = (payload.rstrip("\n") + "\n").encode("utf-8")
+        else:
+            # Wrap payload in RFC 5424 using per-source facility/severity and hostname
+            hostname = source_meta.hostname or source_meta.source_id.replace("_", "-")
+            framed = _rfc5424(
+                payload,
+                hostname=hostname,
+                app_name=source_meta.source_id,
+                facility=source_meta.facility,
+                severity=source_meta.severity,
+            )
 
         try:
             if self._proto == "udp":

@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
-import hmac
 import json
+import random
+import string
 import time
-import uuid
 from typing import Any
 
 import httpx
@@ -21,10 +21,13 @@ MAX_BATCH_BYTES = 1_000_000  # 1 MB
 MAX_RETRIES = 3
 RETRY_BASE_DELAY = 1.0
 
+_NONCE_CHARS = string.ascii_letters + string.digits
+
 
 def _sign_request(api_key: str, nonce: str, timestamp: str) -> str:
-    message = f"{api_key}{nonce}{timestamp}"
-    return hmac.new(api_key.encode(), message.encode(), hashlib.sha256).hexdigest()
+    # XSIAM uses plain SHA256 of concatenated string, not HMAC.
+    # See: docs-cortex.paloaltonetworks.com HTTP log collector auth guide.
+    return hashlib.sha256(f"{api_key}{nonce}{timestamp}".encode()).hexdigest()
 
 
 class HTTPTransport(Transport):
@@ -32,6 +35,7 @@ class HTTPTransport(Transport):
         self._client: httpx.AsyncClient | None = None
         self._url = settings.xsiam_url
         self._api_key = settings.xsiam_api_key
+        self._auth_id = settings.xsiam_auth_id
         self._dataset = settings.xsiam_dataset
         self._batch: list[dict[str, Any]] = []
         self._batch_lock = asyncio.Lock()
@@ -41,22 +45,18 @@ class HTTPTransport(Transport):
             self._client = httpx.AsyncClient(timeout=30.0)
         return self._client
 
-    def _build_headers(self, content_type: str = "application/json") -> dict[str, str]:
-        nonce = str(uuid.uuid4()).replace("-", "")
+    def _build_headers(self, dataset: str, content_type: str = "application/json") -> dict[str, str]:
+        # Nonce: 64 random alphanumeric chars per XSIAM API spec
+        nonce = "".join(random.choices(_NONCE_CHARS, k=64))
         timestamp = str(int(time.time() * 1000))
-        auth_id = "1"
-        signature = hmac.new(
-            self._api_key.encode(),
-            f"{self._api_key}{nonce}{timestamp}".encode(),
-            hashlib.sha256,
-        ).hexdigest()
+        signature = _sign_request(self._api_key, nonce, timestamp)
         return {
             "Content-Type": content_type,
-            "x-xdr-auth-id": auth_id,
+            "x-xdr-auth-id": self._auth_id,
             "x-xdr-nonce": nonce,
             "x-xdr-timestamp": timestamp,
             "x-xdr-hmac": signature,
-            "x-xdr-dataset": self._dataset,
+            "x-xdr-dataset": dataset,
         }
 
     async def send(self, payload: str, source_meta: SourceMeta) -> SendResult:
@@ -65,8 +65,9 @@ class HTTPTransport(Transport):
         except json.JSONDecodeError:
             event = {"raw": payload}
 
+        dataset = source_meta.dataset or self._dataset
         event["_source_id"] = source_meta.source_id
-        event["_dataset"] = self._dataset
+        event["_dataset"] = dataset
 
         body = json.dumps([event])
         encoded = body.encode()
@@ -74,53 +75,68 @@ class HTTPTransport(Transport):
         for attempt in range(MAX_RETRIES):
             try:
                 client = self._get_client()
-                headers = self._build_headers()
+                headers = self._build_headers(dataset)
                 resp = await client.post(self._url, content=encoded, headers=headers)
                 resp.raise_for_status()
                 return SendResult(success=True, bytes_sent=len(encoded))
             except httpx.HTTPStatusError as e:
-                if e.response.status_code < 500 or attempt == MAX_RETRIES - 1:
+                status = e.response.status_code
+                # Retry on 5xx and 429 (rate limited); 429 respects Retry-After if present
+                if status == 429:
+                    retry_after = float(e.response.headers.get("Retry-After", RETRY_BASE_DELAY * (2 ** attempt)))
+                    if attempt < MAX_RETRIES - 1:
+                        await asyncio.sleep(retry_after)
+                        continue
+                if status < 500 or attempt == MAX_RETRIES - 1:
                     return SendResult(success=False, error=str(e))
-                await asyncio.sleep(RETRY_BASE_DELAY * (2**attempt))
+                await asyncio.sleep(RETRY_BASE_DELAY * (2 ** attempt))
             except Exception as e:
                 if attempt == MAX_RETRIES - 1:
                     return SendResult(success=False, error=str(e))
-                await asyncio.sleep(RETRY_BASE_DELAY * (2**attempt))
+                await asyncio.sleep(RETRY_BASE_DELAY * (2 ** attempt))
 
         return SendResult(success=False, error="Max retries exceeded")
 
     async def send_batch(self, events: list[dict], source_meta: SourceMeta) -> SendResult:
+        dataset = source_meta.dataset or self._dataset
         body = json.dumps(events)
         encoded = body.encode()
 
         for attempt in range(MAX_RETRIES):
             try:
                 client = self._get_client()
-                headers = self._build_headers()
+                headers = self._build_headers(dataset)
                 resp = await client.post(self._url, content=encoded, headers=headers)
                 resp.raise_for_status()
                 return SendResult(success=True, bytes_sent=len(encoded))
             except httpx.HTTPStatusError as e:
-                if e.response.status_code < 500 or attempt == MAX_RETRIES - 1:
-                    logger.warning({"event": "http_send_error", "status": e.response.status_code, "source": source_meta.source_id})
+                status = e.response.status_code
+                if status == 429:
+                    retry_after = float(e.response.headers.get("Retry-After", RETRY_BASE_DELAY * (2 ** attempt)))
+                    if attempt < MAX_RETRIES - 1:
+                        await asyncio.sleep(retry_after)
+                        continue
+                if status < 500 or attempt == MAX_RETRIES - 1:
+                    logger.warning({"event": "http_send_error", "status": status, "source": source_meta.source_id})
                     return SendResult(success=False, error=str(e))
-                await asyncio.sleep(RETRY_BASE_DELAY * (2**attempt))
+                await asyncio.sleep(RETRY_BASE_DELAY * (2 ** attempt))
             except Exception as e:
                 if attempt == MAX_RETRIES - 1:
                     logger.error({"event": "http_send_exception", "error": str(e), "source": source_meta.source_id})
                     return SendResult(success=False, error=str(e))
-                await asyncio.sleep(RETRY_BASE_DELAY * (2**attempt))
+                await asyncio.sleep(RETRY_BASE_DELAY * (2 ** attempt))
 
         return SendResult(success=False, error="Max retries exceeded")
 
     async def health_check(self) -> bool:
         try:
+            from urllib.parse import urlparse, urlunparse
+            parsed = urlparse(self._url)
+            health_url = urlunparse(parsed._replace(path="/healthcheck", query="", fragment=""))
             client = self._get_client()
-            resp = await client.get(self._url.rsplit("/", 2)[0] + "/healthcheck", timeout=5.0)
+            resp = await client.get(health_url, timeout=5.0)
             return resp.status_code < 500
         except Exception:
-            # Treat any connectivity issue as unhealthy when no URL is reachable
-            # but don't crash the engine
             return False
 
     async def close(self) -> None:

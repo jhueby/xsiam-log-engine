@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import ssl
+import uuid
 from datetime import datetime, timezone
+from xml.sax.saxutils import escape
 
 import httpx
 
@@ -12,46 +15,58 @@ from utils.logger import get_logger
 
 logger = get_logger(__name__)
 
+# WEF push-subscription envelope. The engine simulates Windows hosts pushing
+# events to the BrokerVM WEC listener using the Windows Event Forwarding (WEF)
+# protocol. In production, BrokerVM also supports pull-based collection via
+# WinRM, but the push model is used here for simulation.
 _WSMAN_ENVELOPE = """<?xml version="1.0" encoding="UTF-8"?>
 <s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"
             xmlns:a="http://schemas.xmlsoap.org/ws/2004/08/addressing"
             xmlns:w="http://schemas.dmtf.org/wbem/wsman/1/wsman.xsd"
-            xmlns:wse="http://schemas.xmlsoap.org/ws/2004/08/eventing">
+            xmlns:wse="http://schemas.microsoft.com/wbem/wsman/1/wsman">
   <s:Header>
     <a:To>http://{host}:{port}/wsman</a:To>
     <a:ReplyTo>
       <a:Address s:mustUnderstand="true">http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous</a:Address>
     </a:ReplyTo>
     <w:ResourceURI>http://schemas.microsoft.com/wbem/wsman/1/windows/EventLog</w:ResourceURI>
-    <a:Action>http://schemas.dmtf.org/wbem/wsman/1/wsman/Put</a:Action>
+    <a:Action>http://schemas.microsoft.com/wbem/wsman/1/wsman/Event</a:Action>
     <a:MessageID>uuid:{message_id}</a:MessageID>
   </s:Header>
   <s:Body>
-    {event_xml}
+    <wse:Collect>
+      <wse:Events>
+        <wse:Event Action="http://schemas.microsoft.com/wbem/wsman/1/windows/EventLog">
+          {event_xml}
+        </wse:Event>
+      </wse:Events>
+    </wse:Collect>
   </s:Body>
 </s:Envelope>"""
 
 
 def _build_event_xml(event: dict) -> str:
-    ts = event.get("TimeCreated", datetime.now(timezone.utc).isoformat())
-    event_id = event.get("EventID", 0)
-    channel = event.get("Channel", "Security")
-    computer = event.get("Computer", "WIN-UNKNOWN")
-    provider = event.get("Provider", "Microsoft-Windows-Security-Auditing")
-    level = event.get("Level", 4)
-    task = event.get("Task", 0)
-    keywords = event.get("Keywords", "0x8020000000000000")
-    subject_user = event.get("SubjectUserName", "-")
-    subject_domain = event.get("SubjectDomainName", "-")
-    subject_logon_id = event.get("SubjectLogonId", "0x0")
+    ts = escape(str(event.get("TimeCreated", datetime.now(timezone.utc).isoformat())))
+    event_id = int(event.get("EventID", 0))
+    channel = escape(str(event.get("Channel", "Security")))
+    computer = escape(str(event.get("Computer", "WIN-UNKNOWN")))
+    provider = escape(str(event.get("Provider", "Microsoft-Windows-Security-Auditing")))
+    provider_guid = escape(str(event.get("ProviderGuid", "54849625-5478-4994-A5BA-3E3B0328C30D")))
+    level = int(event.get("Level", 4))
+    task = int(event.get("Task", 0))
+    keywords = escape(str(event.get("Keywords", "0x8020000000000000")))
+    record_id = int(event.get("EventRecordID", 1))
+    process_id = int(event.get("ProcessID", 4))
+    thread_id = int(event.get("ThreadID", 8))
+    security_user_id = escape(str(event.get("SecurityUserID", "S-1-5-18")))
 
     data_items = ""
     for k, v in event.get("EventData", {}).items():
-        data_items += f'      <Data Name="{k}">{v}</Data>\n'
+        data_items += f'      <Data Name="{escape(str(k))}">{escape(str(v))}</Data>\n'
 
     return f"""<Event xmlns="http://schemas.microsoft.com/win/2004/08/events/event">
   <System>
-    <Provider Name="{provider}" Guid="{{{event.get('ProviderGuid', '54849625-5478-4994-A5BA-3E3B0328C30D')}}}"/>
+    <Provider Name="{provider}" Guid="{{{provider_guid}}}"/>
     <EventID>{event_id}</EventID>
     <Version>0</Version>
     <Level>{level}</Level>
@@ -59,12 +74,12 @@ def _build_event_xml(event: dict) -> str:
     <Opcode>0</Opcode>
     <Keywords>{keywords}</Keywords>
     <TimeCreated SystemTime="{ts}"/>
-    <EventRecordID>{event.get('EventRecordID', 1)}</EventRecordID>
+    <EventRecordID>{record_id}</EventRecordID>
     <Correlation/>
-    <Execution ProcessID="{event.get('ProcessID', 4)}" ThreadID="{event.get('ThreadID', 8)}"/>
+    <Execution ProcessID="{process_id}" ThreadID="{thread_id}"/>
     <Channel>{channel}</Channel>
     <Computer>{computer}</Computer>
-    <Security UserID="{event.get('SecurityUserID', 'S-1-5-18')}"/>
+    <Security UserID="{security_user_id}"/>
   </System>
   <EventData>
 {data_items}  </EventData>
@@ -92,9 +107,6 @@ class WECTransport(Transport):
         return self._client
 
     async def send(self, payload: str, source_meta: SourceMeta) -> SendResult:
-        import uuid
-        import json
-
         try:
             event = json.loads(payload) if isinstance(payload, str) else payload
         except Exception:

@@ -114,6 +114,14 @@ class Engine:
                     source_name=state.source.display_name,
                     format=event.format,
                     transport=state.transport_name,
+                    hostname=(
+                        event.structured.get("device")
+                        or event.structured.get("host")
+                        or ""
+                    ),
+                    facility=getattr(state.source, "syslog_facility", 1),
+                    severity=getattr(state.source, "syslog_severity", 6),
+                    dataset=getattr(state.source, "xsiam_dataset", "") or "",
                 )
                 result = await transport.send(event.raw, meta)
 

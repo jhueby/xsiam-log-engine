@@ -39,6 +39,7 @@ class OktaSource(LogSource):
     supported_transports = ["http"]
     default_eps = 2.0
     tags = ["identity", "sso", "cloud", "okta"]
+    xsiam_dataset: str = "okta_system_log_raw"
 
     async def generate(self) -> LogEvent:
         event_type, _ = weighted_choice(_EVENT_TYPES, [w for _, w in _EVENT_TYPES])

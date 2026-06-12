@@ -127,6 +127,7 @@ class PaloAltoNGFWSource(LogSource):
     supported_transports = ["syslog", "http"]
     default_eps = 10.0
     tags = ["network", "firewall", "paloalto"]
+    syslog_facility: int = 16  # local0
 
     async def generate(self) -> LogEvent:
         log_type = weighted_choice(_LOG_TYPES, _TYPE_WEIGHTS)

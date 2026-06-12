@@ -31,6 +31,7 @@ class ProxyBlueCoatSource(LogSource):
     supported_transports = ["syslog"]
     default_eps = 20.0
     tags = ["proxy", "web", "network"]
+    syslog_facility: int = 16  # local0
 
     # W3C ELFF header fields
     _FIELDS = [

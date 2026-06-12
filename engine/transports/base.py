@@ -11,6 +11,10 @@ class SourceMeta:
     source_name: str
     format: str
     transport: str
+    hostname: str = ""
+    facility: int = 1
+    severity: int = 6
+    dataset: str = ""
 
 
 @dataclass
