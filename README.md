@@ -25,7 +25,7 @@ graph TB
     Engine --> Sources["21+ Log Sources\n(async coroutines)"]
     Sources --> HTTP["HTTP → XSIAM Tenant"]
     Sources --> Syslog["Syslog → BrokerVM :514"]
-    Sources --> WEC["WEC → BrokerVM :5985"]
+    Sources --> WEC["WEC/HTTPS → BrokerVM :5986"]
     Engine --> SSE["SSE Streams\n/stats/stream\n/logs/stream"]
     API --> SSE
 ```
@@ -62,13 +62,43 @@ See `.env.example` for all variables. Key ones:
 
 | Variable | Description |
 |----------|-------------|
-| `XSIAM_URL` | XSIAM HTTP ingest endpoint |
+| `XSIAM_URL` | XSIAM HTTP ingest endpoint (`https://api-<tenant>/logs/v1/event`) |
 | `XSIAM_API_KEY` | XSIAM API key |
+| `XSIAM_DATASET` | Target dataset name (default `xsiam_log_engine`) |
 | `BROKERVM_HOST` | BrokerVM IP or hostname |
 | `BROKERVM_SYSLOG_PORT` | Syslog port (default 514) |
 | `BROKERVM_SYSLOG_PROTO` | `udp` / `tcp` / `tls` |
-| `BROKERVM_WEC_PORT` | WEC port (default 5985) |
+| `BROKERVM_WEC_PORT` | WEC fallback port when no subscription URL is set (default 5986) |
+| `WEC_SUBSCRIPTION_URL` | Full WEF subscription manager URL (sets WEC host + port) |
 | `ENGINE_DEFAULT_EPS` | Global default events/sec |
+| `ENGINE_API_TOKEN` | Optional bearer token for all `/api/*` requests |
+
+### WEC Subscription Manager URL
+
+Set `WEC_SUBSCRIPTION_URL` to the Windows Event Forwarding subscription string copied from your BrokerVM:
+
+```
+WEC_SUBSCRIPTION_URL=Server=HTTPS://bvm.lab:5986/wsman/SubscriptionManager/WEC,Refresh=600,IssuerCA=37210BA1582B95CB0CB558C572B503C349692604
+```
+
+The engine parses the `Server=` component to determine the WEC host and port. The `IssuerCA` thumbprint is stored for reference and Group Policy configuration. Authentication is via TLS client certificate — upload your BrokerVM-issued `.pfx` file through the GUI **Configuration → WEC Client Certificate**.
+
+## XSIAM Setup — HTTP Ingest Parsing Rules
+
+All HTTP sources embed a `simulated_log_source` field in every event:
+
+- **JSON** logs: `{"simulated_log_source": "crowdstrike_falcon", ...rest of event}`
+- **Raw / CEF / LEEF** logs: `simulated_log_source="crowdstrike_falcon" <rest of log line>`
+
+Use this field to route each source to its own dataset in XSIAM. The **Sources → Parsing Rules** tab in the GUI generates ready-to-paste rules for every active source:
+
+```
+[INGEST:vendor="log", product="sim", target_dataset="log_sim_raw", no_hit=drop]filter simulated_log_source = "crowdstrike_falcon";
+
+[INGEST:vendor="log", product="sim", target_dataset="log_sim_raw", no_hit=drop]filter simulated_log_source = "okta";
+```
+
+Add these under **Settings → XDR Data Management → Parsers → New Parser** in your XSIAM tenant.
 
 ## API Reference
 
@@ -77,9 +107,10 @@ See `.env.example` for all variables. Key ones:
 | GET | `/api/sources` | List all sources + status |
 | POST | `/api/sources/{id}/start` | Start a source |
 | POST | `/api/sources/{id}/stop` | Stop a source |
-| PATCH | `/api/sources/{id}/config` | Update EPS / transport |
+| PATCH | `/api/sources/{id}/config` | Update EPS / transport / HTTP settings |
 | GET | `/api/config` | Get transport config |
 | PUT | `/api/config` | Update config (live reload) |
+| POST | `/api/certs/pfx` | Upload WEC client certificate (.pfx / PKCS#12) |
 | GET | `/api/stats` | Aggregate statistics |
 | GET | `/api/stats/stream` | SSE live stats (1s) |
 | GET | `/api/logs/stream` | SSE live log tail |

@@ -24,15 +24,18 @@ _LOG_TYPE_CONTENT_TYPE = {
 }
 
 
-def _build_body(payload: str, log_type: str) -> bytes:
+def _build_body(payload: str, log_type: str, source_id: str) -> bytes:
     if log_type == "json":
         try:
             event = json.loads(payload) if isinstance(payload, str) else payload
         except json.JSONDecodeError:
             event = {"raw": payload}
+        if isinstance(event, dict):
+            event = {"simulated_log_source": source_id, **event}
         return json.dumps([event]).encode("utf-8")
-    # raw / cef / leef: newline-terminated text
-    return (payload.rstrip("\n") + "\n").encode("utf-8")
+    # raw / cef / leef: prepend simulated_log_source so XSIAM can extract it
+    line = f'simulated_log_source="{source_id}" {payload.rstrip(chr(10))}'
+    return (line + "\n").encode("utf-8")
 
 
 class HTTPTransport(Transport):
@@ -56,7 +59,7 @@ class HTTPTransport(Transport):
         return headers
 
     async def send(self, payload: str, source_meta: SourceMeta) -> SendResult:
-        body = _build_body(payload, source_meta.http_log_type)
+        body = _build_body(payload, source_meta.http_log_type, source_meta.source_id)
         if source_meta.http_compression == "gzip":
             encoded = gzip.compress(body)
         else:
@@ -88,11 +91,17 @@ class HTTPTransport(Transport):
         return SendResult(success=False, error="Max retries exceeded")
 
     async def send_batch(self, events: list[dict[str, Any]], source_meta: SourceMeta) -> SendResult:
+        sid = source_meta.source_id
         if source_meta.http_log_type == "json":
-            body = json.dumps(events).encode("utf-8")
+            augmented = [
+                {"simulated_log_source": sid, **e} if isinstance(e, dict) else {"simulated_log_source": sid, "raw": str(e)}
+                for e in events
+            ]
+            body = json.dumps(augmented).encode("utf-8")
         else:
             body = "\n".join(
-                e.get("raw", json.dumps(e)) if isinstance(e, dict) else str(e) for e in events
+                f'simulated_log_source="{sid}" {e.get("raw", json.dumps(e)) if isinstance(e, dict) else str(e)}'
+                for e in events
             ).encode("utf-8") + b"\n"
 
         if source_meta.http_compression == "gzip":
