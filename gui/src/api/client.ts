@@ -60,9 +60,18 @@ export interface TransportConfig {
   brokervm_syslog_proto: 'udp' | 'tcp' | 'tls'
   brokervm_wec_port: number
   brokervm_wec_use_tls: boolean
+  brokervm_wec_user: string
+  brokervm_wec_password: string
   tls_ca_cert_path: string
   tls_client_cert_path: string
   tls_client_key_path: string
+}
+
+export interface PfxUploadResult {
+  cert_path: string
+  key_path: string
+  subject: string
+  expires: string
 }
 
 export interface HealthResponse {
@@ -81,6 +90,13 @@ export const getSourceStats = () => api.get<SourceInfo[]>('/stats/sources')
 
 export const getConfig = () => api.get<TransportConfig>('/config')
 export const updateConfig = (data: Partial<TransportConfig>) => api.put<TransportConfig>('/config', data)
+
+export const uploadPfx = (file: File, passphrase: string) => {
+  const form = new FormData()
+  form.append('file', file)
+  form.append('passphrase', passphrase)
+  return api.post<PfxUploadResult>('/certs/pfx', form)
+}
 
 export const getHealth = () => api.get<HealthResponse>('/health')
 
