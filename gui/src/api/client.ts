@@ -26,6 +26,9 @@ api.interceptors.request.use(config => {
   return config
 })
 
+export type HttpLogType = 'raw' | 'json' | 'cef' | 'leef'
+export type HttpCompression = 'none' | 'gzip'
+
 export interface SourceInfo {
   id: string
   display_name: string
@@ -40,6 +43,9 @@ export interface SourceInfo {
   total_sent: number
   total_errors: number
   last_event_ts: string | null
+  http_log_type: HttpLogType
+  http_compression: HttpCompression
+  http_api_key: string  // '***' if set, '' if using global
 }
 
 export interface StatsResponse {
@@ -53,7 +59,7 @@ export interface StatsResponse {
 
 export interface TransportConfig {
   xsiam_url: string
-  xsiam_api_key: string
+  xsiam_api_key: string   // masked as '***' on GET
   xsiam_dataset: string
   brokervm_host: string
   brokervm_syslog_port: number
@@ -61,7 +67,7 @@ export interface TransportConfig {
   brokervm_wec_port: number
   brokervm_wec_use_tls: boolean
   brokervm_wec_user: string
-  brokervm_wec_password: string
+  brokervm_wec_password: string  // masked as '***' on GET
   tls_ca_cert_path: string
   tls_client_cert_path: string
   tls_client_key_path: string
@@ -82,8 +88,14 @@ export interface HealthResponse {
 export const getSources = () => api.get<SourceInfo[]>('/sources')
 export const startSource = (id: string) => api.post(`/sources/${id}/start`)
 export const stopSource = (id: string) => api.post(`/sources/${id}/stop`)
-export const patchSource = (id: string, data: Partial<{ eps: number; transport: string; enabled: boolean }>) =>
-  api.patch<SourceInfo>(`/sources/${id}/config`, data)
+export const patchSource = (id: string, data: Partial<{
+  eps: number
+  transport: string
+  enabled: boolean
+  http_log_type: HttpLogType
+  http_compression: HttpCompression
+  http_api_key: string
+}>) => api.patch<SourceInfo>(`/sources/${id}/config`, data)
 
 export const getStats = () => api.get<StatsResponse>('/stats')
 export const getSourceStats = () => api.get<SourceInfo[]>('/stats/sources')

@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { SourceInfo, startSource, stopSource, patchSource } from '../api/client'
+import { HttpCompression, HttpLogType, SourceInfo, patchSource, startSource, stopSource } from '../api/client'
+import { ChevronDown, ChevronUp } from 'lucide-react'
 
 const TRANSPORT_COLORS: Record<string, string> = {
   http: 'bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300',
@@ -26,6 +27,7 @@ interface Props {
 export default function SourceCard({ source, onUpdate }: Props) {
   const [loading, setLoading] = useState(false)
   const [eps, setEps] = useState(source.eps)
+  const [showHttp, setShowHttp] = useState(false)
 
   const toggle = async () => {
     setLoading(true)
@@ -120,6 +122,98 @@ export default function SourceCard({ source, onUpdate }: Props) {
           Last: {new Date(source.last_event_ts).toLocaleTimeString()}
         </div>
       )}
+
+      {source.transport === 'http' && (
+        <div className="border-t border-gray-100 dark:border-gray-800 pt-2">
+          <button
+            onClick={() => setShowHttp(v => !v)}
+            className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 w-full"
+          >
+            {showHttp ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+            HTTP settings
+          </button>
+          {showHttp && (
+            <HttpSettings source={source} onUpdate={onUpdate} />
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function HttpSettings({ source, onUpdate }: { source: SourceInfo; onUpdate: () => void }) {
+  const [logType, setLogType] = useState<HttpLogType>(source.http_log_type)
+  const [compression, setCompression] = useState<HttpCompression>(source.http_compression)
+  const [apiKey, setApiKey] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [saved, setSaved] = useState(false)
+
+  const apply = async () => {
+    setSaving(true)
+    setSaved(false)
+    try {
+      const patch: Record<string, string> = { http_log_type: logType, http_compression: compression }
+      if (apiKey) patch.http_api_key = apiKey
+      await patchSource(source.id, patch as any)
+      setSaved(true)
+      setApiKey('')
+      onUpdate()
+      setTimeout(() => setSaved(false), 2500)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="mt-2 space-y-2">
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">Log type</label>
+          <select
+            value={logType}
+            onChange={e => setLogType(e.target.value as HttpLogType)}
+            className="w-full bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-2 py-1 text-xs focus:outline-none focus:border-indigo-500"
+          >
+            <option value="raw">Raw</option>
+            <option value="json">JSON</option>
+            <option value="cef">CEF</option>
+            <option value="leef">LEEF</option>
+          </select>
+        </div>
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">Compression</label>
+          <select
+            value={compression}
+            onChange={e => setCompression(e.target.value as HttpCompression)}
+            className="w-full bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-2 py-1 text-xs focus:outline-none focus:border-indigo-500"
+          >
+            <option value="none">None</option>
+            <option value="gzip">Gzip</option>
+          </select>
+        </div>
+      </div>
+      <div>
+        <label className="block text-xs text-gray-500 mb-1">
+          API key {source.http_api_key === '***' ? <span className="text-indigo-400">(custom set)</span> : <span className="text-gray-400">(using global)</span>}
+        </label>
+        <input
+          type="password"
+          value={apiKey}
+          onChange={e => setApiKey(e.target.value)}
+          placeholder="Paste to override global key"
+          className="w-full bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-2 py-1 text-xs focus:outline-none focus:border-indigo-500"
+        />
+      </div>
+      <div className="flex items-center gap-2">
+        <button
+          onClick={apply}
+          disabled={saving}
+          className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 rounded text-xs text-white transition-colors"
+        >
+          {saving ? 'Applying…' : 'Apply'}
+        </button>
+        {saved && <span className="text-xs text-green-600 dark:text-green-400">Saved</span>}
+      </div>
     </div>
   )
 }

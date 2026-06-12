@@ -15,10 +15,9 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    # XSIAM HTTP
+    # XSIAM HTTP Log Collector
     xsiam_url: str = "http://localhost:9999/logs/v1/event"
     xsiam_api_key: str = "changeme"
-    xsiam_auth_id: str = "1"
     xsiam_dataset: str = "xsiam_log_engine"
 
     # BrokerVM

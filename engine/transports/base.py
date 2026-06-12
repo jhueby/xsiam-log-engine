@@ -15,6 +15,9 @@ class SourceMeta:
     facility: int = 1
     severity: int = 6
     dataset: str = ""
+    http_log_type: str = "raw"      # raw | json | cef | leef
+    http_compression: str = "none"  # none | gzip
+    http_api_key: str = ""          # empty = use global settings.xsiam_api_key
 
 
 @dataclass

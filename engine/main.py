@@ -44,6 +44,11 @@ class SourceState:
         self.start_time: float | None = None
         self.eps_window = SlidingWindowCounter()
 
+        # Per-source HTTP collector settings
+        self.http_log_type: str = "raw"
+        self.http_compression: str = "none"
+        self.http_api_key: str = ""
+
     def set_eps(self, eps: float) -> None:
         self.eps = eps
         self.bucket.set_rate(eps)
@@ -135,6 +140,9 @@ class Engine:
                     facility=getattr(state.source, "syslog_facility", 1),
                     severity=getattr(state.source, "syslog_severity", 6),
                     dataset=getattr(state.source, "xsiam_dataset", "") or "",
+                    http_log_type=state.http_log_type,
+                    http_compression=state.http_compression,
+                    http_api_key=state.http_api_key,
                 )
                 result = await transport.send(event.raw, meta)
 

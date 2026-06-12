@@ -18,12 +18,18 @@ class SourceInfo(BaseModel):
     total_sent: int
     total_errors: int
     last_event_ts: str | None
+    http_log_type: str
+    http_compression: str
+    http_api_key: str  # "***" if set, "" if using global key
 
 
 class SourceConfigPatch(BaseModel):
     eps: float | None = Field(None, ge=0.1, le=10000)
     transport: str | None = None
     enabled: bool | None = None
+    http_log_type: Literal["raw", "json", "cef", "leef"] | None = None
+    http_compression: Literal["none", "gzip"] | None = None
+    http_api_key: str | None = None
 
 
 class TransportConfig(BaseModel):
@@ -56,6 +62,7 @@ class TransportConfigUpdate(BaseModel):
     tls_ca_cert_path: str | None = None
     tls_client_cert_path: str | None = None
     tls_client_key_path: str | None = None
+
 
 
 class StatsResponse(BaseModel):

@@ -28,6 +28,9 @@ def _state_to_info(sid: str) -> SourceInfo:
         total_sent=state.total_sent,
         total_errors=state.total_errors,
         last_event_ts=state.last_event_ts,
+        http_log_type=state.http_log_type,
+        http_compression=state.http_compression,
+        http_api_key="***" if state.http_api_key else "",
     )
 
 
@@ -76,6 +79,12 @@ async def patch_source_config(source_id: str, patch: SourceConfigPatch) -> Sourc
                 detail=f"Transport '{patch.transport}' not supported by '{source_id}'. Supported: {state.source.supported_transports}",
             )
         state.set_transport(patch.transport)
+    if patch.http_log_type is not None:
+        state.http_log_type = patch.http_log_type
+    if patch.http_compression is not None:
+        state.http_compression = patch.http_compression
+    if patch.http_api_key is not None and patch.http_api_key != "***":
+        state.http_api_key = patch.http_api_key
     if patch.enabled is not None:
         if patch.enabled and not state.enabled:
             await engine.start_source(source_id)

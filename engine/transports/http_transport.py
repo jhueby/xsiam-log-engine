@@ -1,11 +1,8 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
+import gzip
 import json
-import random
-import string
-import time
 from typing import Any
 
 import httpx
@@ -16,75 +13,72 @@ from utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-MAX_BATCH_EVENTS = 1000
-MAX_BATCH_BYTES = 1_000_000  # 1 MB
 MAX_RETRIES = 3
 RETRY_BASE_DELAY = 1.0
 
-_NONCE_CHARS = string.ascii_letters + string.digits
+_LOG_TYPE_CONTENT_TYPE = {
+    "json": "application/json",
+    "raw": "text/plain",
+    "cef": "text/plain",
+    "leef": "text/plain",
+}
 
 
-def _sign_request(api_key: str, nonce: str, timestamp: str) -> str:
-    # XSIAM uses plain SHA256 of concatenated string, not HMAC.
-    # See: docs-cortex.paloaltonetworks.com HTTP log collector auth guide.
-    return hashlib.sha256(f"{api_key}{nonce}{timestamp}".encode()).hexdigest()
+def _build_body(payload: str, log_type: str) -> bytes:
+    if log_type == "json":
+        try:
+            event = json.loads(payload) if isinstance(payload, str) else payload
+        except json.JSONDecodeError:
+            event = {"raw": payload}
+        return json.dumps([event]).encode("utf-8")
+    # raw / cef / leef: newline-terminated text
+    return (payload.rstrip("\n") + "\n").encode("utf-8")
 
 
 class HTTPTransport(Transport):
     def __init__(self) -> None:
         self._client: httpx.AsyncClient | None = None
-        self._batch: list[dict[str, Any]] = []
-        self._batch_lock = asyncio.Lock()
 
     def _get_client(self) -> httpx.AsyncClient:
         if self._client is None or self._client.is_closed:
             self._client = httpx.AsyncClient(timeout=30.0)
         return self._client
 
-    def _build_headers(self, dataset: str, content_type: str = "application/json") -> dict[str, str]:
-        # Nonce: 64 random alphanumeric chars per XSIAM API spec
-        nonce = "".join(random.choices(_NONCE_CHARS, k=64))
-        timestamp = str(int(time.time() * 1000))
-        signature = _sign_request(settings.xsiam_api_key, nonce, timestamp)
-        return {
+    def _build_headers(self, meta: SourceMeta) -> dict[str, str]:
+        api_key = meta.http_api_key or settings.xsiam_api_key
+        content_type = _LOG_TYPE_CONTENT_TYPE.get(meta.http_log_type, "text/plain")
+        headers: dict[str, str] = {
             "Content-Type": content_type,
-            "x-xdr-auth-id": settings.xsiam_auth_id,
-            "x-xdr-nonce": nonce,
-            "x-xdr-timestamp": timestamp,
-            "x-xdr-hmac": signature,
-            "x-xdr-dataset": dataset,
+            "Authorization": api_key,
         }
+        if meta.http_compression == "gzip":
+            headers["Content-Encoding"] = "gzip"
+        return headers
 
     async def send(self, payload: str, source_meta: SourceMeta) -> SendResult:
-        try:
-            event = json.loads(payload) if isinstance(payload, str) else payload
-        except json.JSONDecodeError:
-            event = {"raw": payload}
+        body = _build_body(payload, source_meta.http_log_type)
+        if source_meta.http_compression == "gzip":
+            encoded = gzip.compress(body)
+        else:
+            encoded = body
 
-        dataset = source_meta.dataset or settings.xsiam_dataset
-        event["_source_id"] = source_meta.source_id
-        event["_dataset"] = dataset
-
-        body = json.dumps([event])
-        encoded = body.encode()
+        headers = self._build_headers(source_meta)
 
         for attempt in range(MAX_RETRIES):
             try:
                 client = self._get_client()
-                headers = self._build_headers(dataset)
                 resp = await client.post(settings.xsiam_url, content=encoded, headers=headers)
                 resp.raise_for_status()
                 return SendResult(success=True, bytes_sent=len(encoded))
             except httpx.HTTPStatusError as e:
                 status = e.response.status_code
-                # Retry on 5xx and 429 (rate limited); 429 respects Retry-After if present
                 if status == 429:
                     retry_after = float(e.response.headers.get("Retry-After", RETRY_BASE_DELAY * (2 ** attempt)))
                     if attempt < MAX_RETRIES - 1:
                         await asyncio.sleep(retry_after)
                         continue
                 if status < 500 or attempt == MAX_RETRIES - 1:
-                    return SendResult(success=False, error=str(e))
+                    return SendResult(success=False, error=f"HTTP {status}: {e.response.text[:200]}")
                 await asyncio.sleep(RETRY_BASE_DELAY * (2 ** attempt))
             except Exception as e:
                 if attempt == MAX_RETRIES - 1:
@@ -93,15 +87,24 @@ class HTTPTransport(Transport):
 
         return SendResult(success=False, error="Max retries exceeded")
 
-    async def send_batch(self, events: list[dict], source_meta: SourceMeta) -> SendResult:
-        dataset = source_meta.dataset or settings.xsiam_dataset
-        body = json.dumps(events)
-        encoded = body.encode()
+    async def send_batch(self, events: list[dict[str, Any]], source_meta: SourceMeta) -> SendResult:
+        if source_meta.http_log_type == "json":
+            body = json.dumps(events).encode("utf-8")
+        else:
+            body = "\n".join(
+                e.get("raw", json.dumps(e)) if isinstance(e, dict) else str(e) for e in events
+            ).encode("utf-8") + b"\n"
+
+        if source_meta.http_compression == "gzip":
+            encoded = gzip.compress(body)
+        else:
+            encoded = body
+
+        headers = self._build_headers(source_meta)
 
         for attempt in range(MAX_RETRIES):
             try:
                 client = self._get_client()
-                headers = self._build_headers(dataset)
                 resp = await client.post(settings.xsiam_url, content=encoded, headers=headers)
                 resp.raise_for_status()
                 return SendResult(success=True, bytes_sent=len(encoded))
@@ -113,12 +116,12 @@ class HTTPTransport(Transport):
                         await asyncio.sleep(retry_after)
                         continue
                 if status < 500 or attempt == MAX_RETRIES - 1:
-                    logger.warning({"event": "http_send_error", "status": status, "source": source_meta.source_id})
-                    return SendResult(success=False, error=str(e))
+                    logger.warning({"event": "http_batch_error", "status": status, "source": source_meta.source_id})
+                    return SendResult(success=False, error=f"HTTP {status}")
                 await asyncio.sleep(RETRY_BASE_DELAY * (2 ** attempt))
             except Exception as e:
                 if attempt == MAX_RETRIES - 1:
-                    logger.error({"event": "http_send_exception", "error": str(e), "source": source_meta.source_id})
+                    logger.error({"event": "http_batch_exception", "error": str(e), "source": source_meta.source_id})
                     return SendResult(success=False, error=str(e))
                 await asyncio.sleep(RETRY_BASE_DELAY * (2 ** attempt))
 
