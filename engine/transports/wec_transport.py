@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import ssl
 import uuid
@@ -17,32 +18,32 @@ logger = get_logger(__name__)
 
 # WEF push-subscription envelope. The engine simulates Windows hosts pushing
 # events to the BrokerVM WEC listener using the Windows Event Forwarding (WEF)
-# protocol. In production, BrokerVM also supports pull-based collection via
-# WinRM, but the push model is used here for simulation.
+# protocol over WS-Management (MS-WSMV).
 _WSMAN_ENVELOPE = """<?xml version="1.0" encoding="UTF-8"?>
 <s:Envelope xmlns:s="http://www.w3.org/2003/05/soap-envelope"
             xmlns:a="http://schemas.xmlsoap.org/ws/2004/08/addressing"
-            xmlns:w="http://schemas.dmtf.org/wbem/wsman/1/wsman.xsd"
-            xmlns:wse="http://schemas.microsoft.com/wbem/wsman/1/wsman">
+            xmlns:w="http://schemas.dmtf.org/wbem/wsman/1/wsman.xsd">
   <s:Header>
     <a:To>http://{host}:{port}/wsman</a:To>
     <a:ReplyTo>
       <a:Address s:mustUnderstand="true">http://schemas.xmlsoap.org/ws/2004/08/addressing/role/anonymous</a:Address>
     </a:ReplyTo>
     <w:ResourceURI>http://schemas.microsoft.com/wbem/wsman/1/windows/EventLog</w:ResourceURI>
-    <a:Action>http://schemas.microsoft.com/wbem/wsman/1/wsman/Event</a:Action>
+    <a:Action>http://schemas.dmtf.org/wbem/wsman/1/wsman/Event</a:Action>
     <a:MessageID>uuid:{message_id}</a:MessageID>
   </s:Header>
   <s:Body>
-    <wse:Collect>
-      <wse:Events>
-        <wse:Event Action="http://schemas.microsoft.com/wbem/wsman/1/windows/EventLog">
-          {event_xml}
-        </wse:Event>
-      </wse:Events>
-    </wse:Collect>
+    <w:Events>
+      <w:Event>
+        {event_xml}
+      </w:Event>
+    </w:Events>
   </s:Body>
 </s:Envelope>"""
+
+
+def _basic_auth(user: str, password: str) -> str:
+    return "Basic " + base64.b64encode(f"{user}:{password}".encode()).decode()
 
 
 def _build_event_xml(event: dict) -> str:
@@ -88,22 +89,31 @@ def _build_event_xml(event: dict) -> str:
 
 class WECTransport(Transport):
     def __init__(self) -> None:
-        self._host = settings.brokervm_host
-        self._port = settings.brokervm_wec_port
-        self._use_tls = settings.brokervm_wec_use_tls
         self._client: httpx.AsyncClient | None = None
+        self._connected_host: str | None = None
+        self._connected_port: int | None = None
+        self._connected_tls: bool | None = None
 
     def _get_client(self) -> httpx.AsyncClient:
-        if self._client is None or self._client.is_closed:
-            scheme = "https" if self._use_tls else "http"
+        host = settings.brokervm_host
+        port = settings.brokervm_wec_port
+        use_tls = settings.brokervm_wec_use_tls
+        if (self._client is None or self._client.is_closed
+                or self._connected_host != host
+                or self._connected_port != port
+                or self._connected_tls != use_tls):
+            scheme = "https" if use_tls else "http"
             verify: bool | str = False
-            if self._use_tls and settings.tls_ca_cert_path:
+            if use_tls and settings.tls_ca_cert_path:
                 verify = settings.tls_ca_cert_path
             self._client = httpx.AsyncClient(
-                base_url=f"{scheme}://{self._host}:{self._port}",
+                base_url=f"{scheme}://{host}:{port}",
                 verify=verify,
                 timeout=15.0,
             )
+            self._connected_host = host
+            self._connected_port = port
+            self._connected_tls = use_tls
         return self._client
 
     async def send(self, payload: str, source_meta: SourceMeta) -> SendResult:
@@ -112,31 +122,41 @@ class WECTransport(Transport):
         except Exception:
             event = {}
 
+        host = settings.brokervm_host
+        port = settings.brokervm_wec_port
         event_xml = _build_event_xml(event)
         message_id = str(uuid.uuid4())
         envelope = _WSMAN_ENVELOPE.format(
-            host=self._host,
-            port=self._port,
+            host=host,
+            port=port,
             message_id=message_id,
             event_xml=event_xml,
         )
         encoded = envelope.encode("utf-8")
+
+        headers: dict[str, str] = {
+            "Content-Type": "application/soap+xml;charset=UTF-8",
+            "User-Agent": "WEC/5.0 WinRM",
+        }
+        user = settings.brokervm_wec_user
+        if user:
+            headers["Authorization"] = _basic_auth(user, settings.brokervm_wec_password)
 
         try:
             client = self._get_client()
             resp = await client.post(
                 "/wsman",
                 content=encoded,
-                headers={
-                    "Content-Type": "application/soap+xml;charset=UTF-8",
-                    "User-Agent": "WEC/5.0 WinRM",
-                },
+                headers=headers,
             )
             if resp.status_code in (200, 201, 202):
                 return SendResult(success=True, bytes_sent=len(encoded))
             return SendResult(success=False, error=f"HTTP {resp.status_code}")
         except Exception as e:
             self._client = None
+            self._connected_host = None
+            self._connected_port = None
+            self._connected_tls = None
             logger.error({"event": "wec_send_error", "error": str(e), "source": source_meta.source_id})
             return SendResult(success=False, error=str(e))
 
@@ -150,6 +170,9 @@ class WECTransport(Transport):
 
     def reset(self) -> None:
         self._client = None
+        self._connected_host = None
+        self._connected_port = None
+        self._connected_tls = None
 
     async def close(self) -> None:
         if self._client and not self._client.is_closed:

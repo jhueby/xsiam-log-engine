@@ -53,29 +53,41 @@ class UDPSyslogProtocol(asyncio.DatagramProtocol):
 
 class SyslogTransport(Transport):
     def __init__(self) -> None:
-        self._host = settings.brokervm_host
-        self._port = settings.brokervm_syslog_port
-        self._proto = settings.brokervm_syslog_proto
         self._udp_transport: asyncio.DatagramTransport | None = None
         self._tcp_writer: asyncio.StreamWriter | None = None
         self._connect_lock = asyncio.Lock()
+        self._connected_host: str | None = None
+        self._connected_port: int | None = None
 
     async def _ensure_udp(self) -> asyncio.DatagramTransport:
-        if self._udp_transport is None or self._udp_transport.is_closing():
+        host = settings.brokervm_host
+        port = settings.brokervm_syslog_port
+        if (self._udp_transport is None or self._udp_transport.is_closing()
+                or self._connected_host != host or self._connected_port != port):
+            if self._udp_transport and not self._udp_transport.is_closing():
+                self._udp_transport.close()
             loop = asyncio.get_event_loop()
             protocol = UDPSyslogProtocol()
             transport, _ = await loop.create_datagram_endpoint(
                 lambda: protocol,
-                remote_addr=(self._host, self._port),
+                remote_addr=(host, port),
                 family=socket.AF_INET,
             )
             self._udp_transport = transport
+            self._connected_host = host
+            self._connected_port = port
         return self._udp_transport
 
     async def _ensure_tcp(self) -> asyncio.StreamWriter:
         async with self._connect_lock:
-            if self._tcp_writer is None or self._tcp_writer.is_closing():
-                if self._proto == "tls":
+            host = settings.brokervm_host
+            port = settings.brokervm_syslog_port
+            proto = settings.brokervm_syslog_proto
+            if (self._tcp_writer is None or self._tcp_writer.is_closing()
+                    or self._connected_host != host or self._connected_port != port):
+                if self._tcp_writer and not self._tcp_writer.is_closing():
+                    self._tcp_writer.close()
+                if proto == "tls":
                     ctx = ssl.create_default_context()
                     ca = settings.tls_ca_cert_path
                     cert = settings.tls_client_cert_path
@@ -84,10 +96,12 @@ class SyslogTransport(Transport):
                         ctx.load_verify_locations(ca)
                     if cert and key:
                         ctx.load_cert_chain(cert, key)
-                    _, writer = await asyncio.open_connection(self._host, self._port, ssl=ctx)
+                    _, writer = await asyncio.open_connection(host, port, ssl=ctx)
                 else:
-                    _, writer = await asyncio.open_connection(self._host, self._port)
+                    _, writer = await asyncio.open_connection(host, port)
                 self._tcp_writer = writer
+                self._connected_host = host
+                self._connected_port = port
         return self._tcp_writer
 
     async def send(self, payload: str, source_meta: SourceMeta) -> SendResult:
@@ -105,8 +119,9 @@ class SyslogTransport(Transport):
                 severity=source_meta.severity,
             )
 
+        proto = settings.brokervm_syslog_proto
         try:
-            if self._proto == "udp":
+            if proto == "udp":
                 transport = await self._ensure_udp()
                 transport.sendto(framed)
                 return SendResult(success=True, bytes_sent=len(framed))
@@ -119,20 +134,25 @@ class SyslogTransport(Transport):
         except Exception as e:
             self._udp_transport = None
             self._tcp_writer = None
+            self._connected_host = None
+            self._connected_port = None
             logger.error({"event": "syslog_send_error", "error": str(e), "source": source_meta.source_id})
             return SendResult(success=False, error=str(e))
 
     async def health_check(self) -> bool:
+        host = settings.brokervm_host
+        port = settings.brokervm_syslog_port
+        proto = settings.brokervm_syslog_proto
         try:
-            if self._proto == "udp":
+            if proto == "udp":
                 sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
                 sock.settimeout(2)
-                sock.connect((self._host, self._port))
+                sock.connect((host, port))
                 sock.close()
                 return True
             else:
                 reader, writer = await asyncio.wait_for(
-                    asyncio.open_connection(self._host, self._port), timeout=3.0
+                    asyncio.open_connection(host, port), timeout=3.0
                 )
                 writer.close()
                 return True
@@ -142,6 +162,8 @@ class SyslogTransport(Transport):
     def reset(self) -> None:
         self._udp_transport = None
         self._tcp_writer = None
+        self._connected_host = None
+        self._connected_port = None
 
     async def close(self) -> None:
         if self._udp_transport:

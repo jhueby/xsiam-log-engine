@@ -27,6 +27,8 @@ class Settings(BaseSettings):
     brokervm_syslog_proto: Literal["udp", "tcp", "tls"] = "udp"
     brokervm_wec_port: int = 5985
     brokervm_wec_use_tls: bool = False
+    brokervm_wec_user: str = ""
+    brokervm_wec_password: str = ""
 
     # TLS
     tls_ca_cert_path: str = ""

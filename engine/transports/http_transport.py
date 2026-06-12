@@ -33,10 +33,6 @@ def _sign_request(api_key: str, nonce: str, timestamp: str) -> str:
 class HTTPTransport(Transport):
     def __init__(self) -> None:
         self._client: httpx.AsyncClient | None = None
-        self._url = settings.xsiam_url
-        self._api_key = settings.xsiam_api_key
-        self._auth_id = settings.xsiam_auth_id
-        self._dataset = settings.xsiam_dataset
         self._batch: list[dict[str, Any]] = []
         self._batch_lock = asyncio.Lock()
 
@@ -49,10 +45,10 @@ class HTTPTransport(Transport):
         # Nonce: 64 random alphanumeric chars per XSIAM API spec
         nonce = "".join(random.choices(_NONCE_CHARS, k=64))
         timestamp = str(int(time.time() * 1000))
-        signature = _sign_request(self._api_key, nonce, timestamp)
+        signature = _sign_request(settings.xsiam_api_key, nonce, timestamp)
         return {
             "Content-Type": content_type,
-            "x-xdr-auth-id": self._auth_id,
+            "x-xdr-auth-id": settings.xsiam_auth_id,
             "x-xdr-nonce": nonce,
             "x-xdr-timestamp": timestamp,
             "x-xdr-hmac": signature,
@@ -65,7 +61,7 @@ class HTTPTransport(Transport):
         except json.JSONDecodeError:
             event = {"raw": payload}
 
-        dataset = source_meta.dataset or self._dataset
+        dataset = source_meta.dataset or settings.xsiam_dataset
         event["_source_id"] = source_meta.source_id
         event["_dataset"] = dataset
 
@@ -76,7 +72,7 @@ class HTTPTransport(Transport):
             try:
                 client = self._get_client()
                 headers = self._build_headers(dataset)
-                resp = await client.post(self._url, content=encoded, headers=headers)
+                resp = await client.post(settings.xsiam_url, content=encoded, headers=headers)
                 resp.raise_for_status()
                 return SendResult(success=True, bytes_sent=len(encoded))
             except httpx.HTTPStatusError as e:
@@ -98,7 +94,7 @@ class HTTPTransport(Transport):
         return SendResult(success=False, error="Max retries exceeded")
 
     async def send_batch(self, events: list[dict], source_meta: SourceMeta) -> SendResult:
-        dataset = source_meta.dataset or self._dataset
+        dataset = source_meta.dataset or settings.xsiam_dataset
         body = json.dumps(events)
         encoded = body.encode()
 
@@ -106,7 +102,7 @@ class HTTPTransport(Transport):
             try:
                 client = self._get_client()
                 headers = self._build_headers(dataset)
-                resp = await client.post(self._url, content=encoded, headers=headers)
+                resp = await client.post(settings.xsiam_url, content=encoded, headers=headers)
                 resp.raise_for_status()
                 return SendResult(success=True, bytes_sent=len(encoded))
             except httpx.HTTPStatusError as e:
@@ -131,7 +127,7 @@ class HTTPTransport(Transport):
     async def health_check(self) -> bool:
         try:
             from urllib.parse import urlparse, urlunparse
-            parsed = urlparse(self._url)
+            parsed = urlparse(settings.xsiam_url)
             health_url = urlunparse(parsed._replace(path="/healthcheck", query="", fragment=""))
             client = self._get_client()
             resp = await client.get(health_url, timeout=5.0)
