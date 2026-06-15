@@ -1,6 +1,6 @@
 # XSIAM Log Engine
 
-A production-quality, Dockerized enterprise log simulation engine. Generates realistic log traffic from 21+ sources and forwards it to a Palo Alto XSIAM tenant or Cortex XDR BrokerVM via HTTP, Syslog (UDP/TCP/TLS), and WEC.
+A production-quality, Dockerized enterprise log simulation engine. Generates realistic log traffic from 22+ sources and forwards it to a Palo Alto XSIAM tenant or Cortex XDR BrokerVM via HTTP, Syslog (UDP/TCP/TLS), and WEC.
 
 ## Quickstart
 
@@ -22,7 +22,7 @@ docker compose up --build
 graph TB
     GUI["React GUI :3000"] -->|nginx /api/ proxy| API["FastAPI :8080"]
     API --> Engine["Engine Orchestrator"]
-    Engine --> Sources["21+ Log Sources\n(async coroutines)"]
+    Engine --> Sources["22+ Log Sources\n(async coroutines)"]
     Sources --> HTTP["HTTP → XSIAM Tenant"]
     Sources --> Syslog["Syslog → BrokerVM :514"]
     Sources --> WEC["WEC/HTTPS → BrokerVM :5986"]
@@ -55,6 +55,7 @@ graph TB
 | Azure AD / Entra ID | HTTP | identity, cloud |
 | AWS CloudTrail | HTTP | cloud, aws |
 | NetFlow v5/v9 | Syslog | network, flow |
+| Proofpoint TAP | HTTP | email, cloud |
 
 ## Environment Variables
 
