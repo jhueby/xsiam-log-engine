@@ -49,6 +49,9 @@ class SourceState:
         self.http_compression: str = "none"
         self.http_api_key: str = ""
 
+        # Circuit-breaker reason; set when auto-disabled, cleared on manual start
+        self.auto_disabled_reason: str | None = None
+
     def set_eps(self, eps: float) -> None:
         self.eps = eps
         self.bucket.set_rate(eps)
@@ -95,6 +98,7 @@ class Engine:
             if state.enabled:
                 return
             state.enabled = True
+            state.auto_disabled_reason = None
             state._stop_event.clear()
             state._task = asyncio.create_task(self._run_source(state))
         logger.info({"event": "source_started", "source": source_id})
@@ -175,12 +179,14 @@ class Engine:
                 consecutive_errors += 1
                 logger.error({"event": "generate_error", "source": state.source.id, "error": str(exc)})
                 if consecutive_errors >= _MAX_CONSECUTIVE_ERRORS:
+                    reason = f"{_MAX_CONSECUTIVE_ERRORS} consecutive errors"
                     logger.error({
                         "event": "source_auto_disabled",
                         "source": state.source.id,
-                        "reason": f"{_MAX_CONSECUTIVE_ERRORS} consecutive errors",
+                        "reason": reason,
                     })
                     state.enabled = False
+                    state.auto_disabled_reason = reason
                     state._task = None
                     break
 

@@ -21,6 +21,7 @@ class SourceInfo(BaseModel):
     http_log_type: str
     http_compression: str
     http_api_key: str  # "***" if set, "" if using global key
+    auto_disabled_reason: str | None
 
 
 class SourceConfigPatch(BaseModel):

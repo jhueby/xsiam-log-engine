@@ -46,6 +46,7 @@ export interface SourceInfo {
   http_log_type: HttpLogType
   http_compression: HttpCompression
   http_api_key: string  // '***' if set, '' if using global
+  auto_disabled_reason: string | null
 }
 
 export interface StatsResponse {

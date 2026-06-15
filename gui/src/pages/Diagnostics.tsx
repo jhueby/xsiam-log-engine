@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { Trash2 } from 'lucide-react'
+import { Trash2, WifiOff } from 'lucide-react'
 import { DiagEntry, DiagLevel, clearDiagLogs, getDiagLevel, getDiagLogs, setDiagLevel, sseUrl } from '../api/client'
+import { useSSE } from '../hooks/useSSE'
 
 const LEVEL_OPTIONS: { value: DiagLevel; label: string; desc: string }[] = [
   { value: 'off', label: 'Off', desc: 'No diagnostic logging' },
@@ -29,27 +30,20 @@ export default function Diagnostics() {
   const [level, setLevel] = useState<DiagLevel>('errors')
   const [entries, setEntries] = useState<DiagEntry[]>([])
   const [autoScroll, setAutoScroll] = useState(true)
+  const [confirmClear, setConfirmClear] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
-  const esRef = useRef<EventSource | null>(null)
 
-  // Load current level + initial history
   useEffect(() => {
     getDiagLevel().then(r => setLevel(r.data.level)).catch(() => {})
     getDiagLogs(200).then(r => setEntries(r.data)).catch(() => {})
   }, [])
 
-  // SSE stream for new entries
-  useEffect(() => {
-    const es = new EventSource(sseUrl('/api/diagnostics/stream'))
-    es.onmessage = (e) => {
-      try {
-        const entry = JSON.parse(e.data) as DiagEntry
-        setEntries(prev => [...prev.slice(-499), entry])
-      } catch {}
-    }
-    esRef.current = es
-    return () => es.close()
-  }, [])
+  const connected = useSSE('/api/diagnostics/stream', (data) => {
+    try {
+      const entry = JSON.parse(data) as DiagEntry
+      setEntries(prev => [...prev.slice(-499), entry])
+    } catch {}
+  })
 
   useEffect(() => {
     if (autoScroll) bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -63,6 +57,12 @@ export default function Diagnostics() {
   }
 
   const handleClear = async () => {
+    if (!confirmClear) {
+      setConfirmClear(true)
+      setTimeout(() => setConfirmClear(false), 3000)
+      return
+    }
+    setConfirmClear(false)
     try {
       await clearDiagLogs()
       setEntries([])
@@ -71,11 +71,9 @@ export default function Diagnostics() {
 
   return (
     <div className="flex flex-col h-screen">
-      {/* Header */}
       <div className="flex items-center gap-6 px-6 py-3 border-b border-gray-200 dark:border-gray-800 bg-gray-100 dark:bg-gray-950">
         <h1 className="font-semibold text-gray-900 dark:text-gray-200">Diagnostics</h1>
 
-        {/* Level selector */}
         <div className="flex items-center gap-1 bg-white dark:bg-gray-900 rounded p-1">
           {LEVEL_OPTIONS.map(opt => (
             <button
@@ -98,6 +96,11 @@ export default function Diagnostics() {
         </div>
 
         <div className="ml-auto flex items-center gap-4">
+          {!connected && (
+            <span className="flex items-center gap-1 text-xs text-yellow-600 dark:text-yellow-400">
+              <WifiOff size={12} /> Reconnecting…
+            </span>
+          )}
           <label className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400 cursor-pointer">
             <input
               type="checkbox"
@@ -109,22 +112,24 @@ export default function Diagnostics() {
           </label>
           <button
             onClick={handleClear}
-            className="flex items-center gap-1.5 text-xs text-gray-500 hover:text-red-600 dark:hover:text-red-400 transition-colors"
+            className={`flex items-center gap-1.5 text-xs transition-colors ${
+              confirmClear
+                ? 'text-red-600 dark:text-red-400 font-medium'
+                : 'text-gray-500 hover:text-red-600 dark:hover:text-red-400'
+            }`}
           >
             <Trash2 size={12} />
-            Clear
+            {confirmClear ? 'Confirm Clear?' : 'Clear'}
           </button>
         </div>
       </div>
 
-      {/* Status bar */}
       {level === 'off' && (
         <div className="px-6 py-2 bg-yellow-100 dark:bg-yellow-950 border-b border-yellow-300 dark:border-yellow-800 text-yellow-800 dark:text-yellow-300 text-xs">
           Diagnostic logging is <strong>Off</strong>. Set level to Errors or Informational to capture engine activity.
         </div>
       )}
 
-      {/* Log entries */}
       <div className="flex-1 overflow-auto font-mono text-xs p-2 space-y-0.5">
         {entries.length === 0 ? (
           <div className="flex items-center justify-center h-full text-gray-500 dark:text-gray-600">
@@ -155,7 +160,6 @@ export default function Diagnostics() {
         <div ref={bottomRef} />
       </div>
 
-      {/* Footer */}
       <div className="px-6 py-2 border-t border-gray-200 dark:border-gray-800 bg-gray-100 dark:bg-gray-950 text-xs text-gray-500 dark:text-gray-600">
         {entries.length} entries &nbsp;·&nbsp; capturing: <span className="text-gray-600 dark:text-gray-400">{level}</span>
       </div>

@@ -31,6 +31,7 @@ def _state_to_info(sid: str) -> SourceInfo:
         http_log_type=state.http_log_type,
         http_compression=state.http_compression,
         http_api_key="***" if state.http_api_key else "",
+        auto_disabled_reason=state.auto_disabled_reason,
     )
 
 
