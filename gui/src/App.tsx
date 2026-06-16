@@ -9,6 +9,7 @@ import Diagnostics from './pages/Diagnostics'
 import ErrorBoundary from './components/ErrorBoundary'
 import ThemeToggle from './components/ThemeToggle'
 import Toasts from './components/Toast'
+import KeyboardShortcuts from './components/KeyboardShortcuts'
 import { ToastProvider } from './hooks/useToast'
 import { getHealth, HealthResponse } from './api/client'
 
@@ -80,8 +81,9 @@ export default function App() {
             <div className="p-2 border-t border-gray-200 dark:border-gray-800">
               <ThemeToggle />
             </div>
-            <div className="px-4 pb-4 text-xs text-gray-500 dark:text-gray-600">
-              Palo Alto Networks
+            <div className="px-4 pb-4 flex items-center justify-between text-xs text-gray-500 dark:text-gray-600">
+              <span>Palo Alto Networks</span>
+              <kbd className="px-1.5 py-0.5 rounded border border-gray-300 dark:border-gray-700 bg-gray-100 dark:bg-gray-800 font-mono" title="Keyboard shortcuts">?</kbd>
             </div>
           </aside>
           <main className="flex-1 overflow-auto bg-gray-100 dark:bg-gray-950">
@@ -96,6 +98,7 @@ export default function App() {
             </ErrorBoundary>
           </main>
         </div>
+        <KeyboardShortcuts />
         <Toasts />
       </BrowserRouter>
     </ToastProvider>
