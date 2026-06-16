@@ -2,6 +2,114 @@
 @tailwind components;
 @tailwind utilities;
 
+/*
+ * Theme system
+ * ------------
+ * Colors are driven by CSS variables (space-separated RGB channels). The
+ * default :root palette serves both the LIGHT theme and the neutral DARK theme
+ * — dark simply adds `.dark`, which flips Tailwind's `dark:` variants to the
+ * darker end of the same gray ramp.
+ *
+ * The three custom dark themes (Midnight, Nord, Solarized) add `.dark` AND a
+ * `.theme-*` class that remaps the gray ramp + accent. Because every component
+ * already uses `dark:bg-gray-900`, `text-gray-200`, `bg-indigo-600`, etc., they
+ * recolor automatically with no markup changes.
+ *
+ * Gray ramp convention (matches Tailwind): 50 = lightest (body text in dark),
+ * 950 = darkest (app background). 900 = card surface, 800 = borders, 400/500 =
+ * muted text.
+ */
+
+:root {
+  /* Light + neutral Dark — Tailwind default gray */
+  --gray-50: 249 250 251;
+  --gray-100: 243 244 246;
+  --gray-200: 229 231 235;
+  --gray-300: 209 213 219;
+  --gray-400: 156 163 175;
+  --gray-500: 107 114 128;
+  --gray-600: 75 85 99;
+  --gray-700: 55 65 81;
+  --gray-800: 31 41 55;
+  --gray-900: 17 24 39;
+  --gray-950: 3 7 18;
+
+  /* Accent — indigo */
+  --accent-50: 238 242 255;
+  --accent-300: 165 180 252;
+  --accent-400: 129 140 248;
+  --accent-500: 99 102 241;
+  --accent-600: 79 70 229;
+  --accent-700: 67 56 202;
+}
+
+/* ── Midnight Cyan ─────────────────────────────────────────────── */
+.theme-midnight {
+  /* Slate text ramp for legibility; deep navy reserved for surfaces. */
+  --gray-50: 248 250 252;
+  --gray-100: 241 245 249;
+  --gray-200: 226 232 240;
+  --gray-300: 203 213 225;
+  --gray-400: 148 163 184;
+  --gray-500: 100 116 139;
+  --gray-600: 71 85 105;
+  --gray-700: 30 41 59;
+  --gray-800: 30 41 59;
+  --gray-900: 19 26 43;
+  --gray-950: 10 14 26;
+
+  --accent-50: 207 250 254;
+  --accent-300: 103 232 249;
+  --accent-400: 34 211 238;
+  --accent-500: 6 182 212;
+  --accent-600: 8 145 178;
+  --accent-700: 14 116 144;
+}
+
+/* ── Nord ──────────────────────────────────────────────────────── */
+.theme-nord {
+  --gray-50: 236 239 244;
+  --gray-100: 229 233 240;
+  --gray-200: 216 222 233;
+  --gray-300: 171 182 200;
+  --gray-400: 129 161 193;
+  --gray-500: 122 134 159;
+  --gray-600: 76 86 106;
+  --gray-700: 67 76 94;
+  --gray-800: 59 66 82;
+  --gray-900: 52 59 72;
+  --gray-950: 46 52 64;
+
+  --accent-50: 224 236 240;
+  --accent-300: 163 208 221;
+  --accent-400: 136 192 208;
+  --accent-500: 136 192 208;
+  --accent-600: 94 129 172;
+  --accent-700: 76 111 153;
+}
+
+/* ── Solarized Dark ────────────────────────────────────────────── */
+.theme-solarized {
+  --gray-50: 253 246 227;
+  --gray-100: 238 232 213;
+  --gray-200: 147 161 161;
+  --gray-300: 131 148 150;
+  --gray-400: 101 123 131;
+  --gray-500: 88 110 117;
+  --gray-600: 50 85 96;
+  --gray-700: 9 78 94;
+  --gray-800: 7 54 66;
+  --gray-900: 5 47 58;
+  --gray-950: 0 43 54;
+
+  --accent-50: 214 235 249;
+  --accent-300: 108 178 235;
+  --accent-400: 75 163 227;
+  --accent-500: 38 139 210;
+  --accent-600: 28 111 176;
+  --accent-700: 21 90 143;
+}
+
 body {
   @apply bg-gray-100 dark:bg-gray-950 text-gray-900 dark:text-gray-100 font-mono;
 }

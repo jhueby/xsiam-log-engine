@@ -7,9 +7,17 @@
     <title>XSIAM Log Engine</title>
     <script>
       // Apply theme before first paint to avoid a flash of the wrong mode.
-      const theme = localStorage.getItem('theme')
-        ?? (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
-      document.documentElement.classList.toggle('dark', theme === 'dark')
+      // Mirrors applyTheme() in src/theme.ts (kept inline + dependency-free so
+      // it runs before the bundle loads).
+      (function () {
+        var theme = localStorage.getItem('theme')
+          || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark')
+        var root = document.documentElement
+        if (theme !== 'light') root.classList.add('dark')
+        if (theme === 'midnight') root.classList.add('theme-midnight')
+        else if (theme === 'nord') root.classList.add('theme-nord')
+        else if (theme === 'solarized') root.classList.add('theme-solarized')
+      })()
     </script>
   </head>
   <body>
