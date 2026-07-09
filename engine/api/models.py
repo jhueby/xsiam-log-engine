@@ -22,6 +22,7 @@ class SourceInfo(BaseModel):
     http_compression: str
     http_api_key: str  # "***" if set, "" if using global key
     auto_disabled_reason: str | None
+    xsiam_dataset: str  # effective dataset (source override or global default)
 
 
 class SourceConfigPatch(BaseModel):
@@ -37,6 +38,9 @@ class TransportConfig(BaseModel):
     xsiam_url: str
     xsiam_api_key: str
     xsiam_dataset: str
+    xsiam_api_url: str
+    xsiam_api_key_id: str
+    xsiam_api_secret: str  # masked as "***" on GET
     brokervm_host: str
     brokervm_syslog_port: int
     brokervm_syslog_proto: Literal["udp", "tcp", "tls"]
@@ -50,6 +54,9 @@ class TransportConfigUpdate(BaseModel):
     xsiam_url: str | None = None
     xsiam_api_key: str | None = None
     xsiam_dataset: str | None = None
+    xsiam_api_url: str | None = None
+    xsiam_api_key_id: str | None = None
+    xsiam_api_secret: str | None = None
     brokervm_host: str | None = None
     brokervm_syslog_port: int | None = None
     brokervm_syslog_proto: Literal["udp", "tcp", "tls"] | None = None
@@ -75,3 +82,31 @@ class HealthResponse(BaseModel):
 class ControlResponse(BaseModel):
     ok: bool
     message: str
+
+
+class CorrelationRuleInfo(BaseModel):
+    name: str
+    source_id: str | None  # parsed from the [LogSim] prefix; None for unmanaged
+    managed: bool
+    severity: str = ""
+    dataset: str = ""
+    xql_query: str = ""
+    description: str = ""
+    enabled: bool = True
+
+
+class CorrelationApplyResponse(BaseModel):
+    ok: bool
+    message: str
+    rule: CorrelationRuleInfo
+
+
+class ValidationCheck(BaseModel):
+    name: Literal["configured", "reachable", "authenticated", "correlations_access"]
+    ok: bool
+    detail: str
+
+
+class ConfigValidationResponse(BaseModel):
+    ok: bool
+    checks: list[ValidationCheck]

@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
-import { PfxUploadResult, TransportConfig, updateConfig, uploadPfx } from '../api/client'
-import { Save, RefreshCw, Upload, ShieldCheck, CheckCircle } from 'lucide-react'
+import { PfxUploadResult, TransportConfig, ValidationCheck, updateConfig, uploadPfx, validateConfig } from '../api/client'
+import { Save, RefreshCw, Upload, ShieldCheck, CheckCircle, XCircle, PlugZap } from 'lucide-react'
 
 interface Props {
   config: TransportConfig
@@ -11,6 +11,7 @@ export default function ConfigPanel({ config, onSaved }: Props) {
   const [form, setForm] = useState({
     ...config,
     xsiam_api_key: '',
+    xsiam_api_secret: '',
   })
   const [saving, setSaving] = useState(false)
   const [savedMsg, setSavedMsg] = useState('')
@@ -25,6 +26,7 @@ export default function ConfigPanel({ config, onSaved }: Props) {
     try {
       const payload = { ...form }
       if (!payload.xsiam_api_key) delete (payload as any).xsiam_api_key
+      if (!payload.xsiam_api_secret) delete (payload as any).xsiam_api_secret
       // cert paths are read-only; only set via pfx upload endpoint
       delete (payload as any).tls_client_cert_path
       delete (payload as any).tls_client_key_path
@@ -58,6 +60,20 @@ export default function ConfigPanel({ config, onSaved }: Props) {
           <Field label="API Key" value={form.xsiam_api_key} onChange={v => set('xsiam_api_key', v)} type="password" placeholder="Leave blank to keep current" />
           <Field label="Dataset" value={form.xsiam_dataset} onChange={v => set('xsiam_dataset', v)} />
         </div>
+      </section>
+
+      <section>
+        <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 border-b border-gray-200 dark:border-gray-800 pb-2">XSIAM Public API</h3>
+        <p className="text-xs text-gray-500 mb-3">
+          Management API used for correlation rules — a different host than the ingest collector.
+          Requires a <strong>standard</strong> API key with the Instance Administrator role.
+        </p>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Field label="API URL" value={form.xsiam_api_url} onChange={v => set('xsiam_api_url', v)} placeholder="https://api-<tenant>.xdr.us.paloaltonetworks.com" />
+          <Field label="API Key ID" value={form.xsiam_api_key_id} onChange={v => set('xsiam_api_key_id', v)} placeholder="e.g. 3" />
+          <Field label="API Key" value={form.xsiam_api_secret} onChange={v => set('xsiam_api_secret', v)} type="password" placeholder="Leave blank to keep current" />
+        </div>
+        <TestConnection />
       </section>
 
       <section>
@@ -112,6 +128,64 @@ export default function ConfigPanel({ config, onSaved }: Props) {
         {savedMsg && <span className="text-xs text-green-600 dark:text-green-400">{savedMsg}</span>}
         {errorMsg && <span className="text-xs text-red-600 dark:text-red-400">{errorMsg}</span>}
       </div>
+    </div>
+  )
+}
+
+const CHECK_LABELS: Record<ValidationCheck['name'], string> = {
+  configured: 'Settings present',
+  reachable: 'API reachable',
+  authenticated: 'API key accepted',
+  correlations_access: 'Correlations access',
+}
+
+function TestConnection() {
+  const [checks, setChecks] = useState<ValidationCheck[] | null>(null)
+  const [running, setRunning] = useState(false)
+  const [failed, setFailed] = useState('')
+
+  const run = async () => {
+    setRunning(true)
+    setChecks(null)
+    setFailed('')
+    try {
+      const r = await validateConfig()
+      setChecks(r.data.checks)
+    } catch (err: any) {
+      const detail = err?.response?.data?.detail
+      setFailed(typeof detail === 'string' ? detail : 'Validation request failed — is the engine running?')
+    } finally {
+      setRunning(false)
+    }
+  }
+
+  return (
+    <div className="mt-3 space-y-2">
+      <div className="flex items-center gap-3">
+        <button
+          onClick={run}
+          disabled={running}
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-300 dark:bg-gray-700 hover:bg-gray-400 dark:hover:bg-gray-600 disabled:opacity-50 rounded text-xs transition-colors"
+        >
+          {running ? <RefreshCw size={12} className="animate-spin" /> : <PlugZap size={12} />}
+          Test connection
+        </button>
+        <span className="text-xs text-gray-500">Tests the saved configuration — click Save &amp; Reload first if you changed fields.</span>
+      </div>
+      {failed && <div className="text-xs text-red-600 dark:text-red-400">{failed}</div>}
+      {checks && (
+        <div className="space-y-1">
+          {checks.map(c => (
+            <div key={c.name} className="flex items-start gap-2 text-xs">
+              {c.ok
+                ? <CheckCircle size={13} className="text-green-500 flex-shrink-0 mt-0.5" />
+                : <XCircle size={13} className="text-red-500 flex-shrink-0 mt-0.5" />}
+              <span className="font-medium w-36 flex-shrink-0">{CHECK_LABELS[c.name]}</span>
+              <span className={c.ok ? 'text-gray-500' : 'text-red-600 dark:text-red-400'}>{c.detail}</span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

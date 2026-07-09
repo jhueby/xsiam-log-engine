@@ -1,5 +1,16 @@
-import { useState } from 'react'
-import { HttpCompression, HttpLogType, SourceInfo, patchSource, startSource, stopSource } from '../api/client'
+import { useEffect, useState } from 'react'
+import {
+  CorrelationRuleInfo,
+  HttpCompression,
+  HttpLogType,
+  SourceInfo,
+  applyCorrelationRule,
+  deleteCorrelationRule,
+  patchSource,
+  previewCorrelationRule,
+  startSource,
+  stopSource,
+} from '../api/client'
 import { ChevronDown, ChevronUp, Copy, Check, AlertTriangle } from 'lucide-react'
 import { useToast } from '../hooks/useToast'
 import { relativeTime, absoluteTime } from '../utils/time'
@@ -311,6 +322,114 @@ function HttpSettings({ source, onUpdate }: { source: SourceInfo; onUpdate: () =
       </div>
 
       <ParsingRuleBlock sourceId={source.id} />
+      <CorrelationRuleBlock sourceId={source.id} />
+    </div>
+  )
+}
+
+function CorrelationRuleBlock({ sourceId }: { sourceId: string }) {
+  const { show } = useToast()
+  const [rule, setRule] = useState<CorrelationRuleInfo | null>(null)
+  const [copied, setCopied] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const [confirmOverwrite, setConfirmOverwrite] = useState(false)
+
+  useEffect(() => {
+    previewCorrelationRule(sourceId).then(r => setRule(r.data)).catch(() => {})
+  }, [sourceId])
+
+  const errDetail = (err: any, fallback: string) => {
+    const d = err?.response?.data?.detail
+    return typeof d === 'string' ? d : fallback
+  }
+
+  const push = async (overwrite = false) => {
+    setBusy(true)
+    try {
+      const r = await applyCorrelationRule(sourceId, overwrite)
+      show(r.data.message, 'success')
+      setConfirmOverwrite(false)
+    } catch (err: any) {
+      if (err?.response?.status === 409) setConfirmOverwrite(true)
+      else show(errDetail(err, 'Failed to push correlation rule'), 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const remove = async () => {
+    setBusy(true)
+    setConfirmOverwrite(false)
+    try {
+      const r = await deleteCorrelationRule(sourceId)
+      show(r.data?.message ?? 'Correlation rule removed', 'info')
+    } catch (err: any) {
+      show(errDetail(err, 'Failed to remove correlation rule'), 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const copy = () => {
+    if (!rule) return
+    navigator.clipboard.writeText(rule.xql_query)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
+
+  if (!rule) return null
+
+  return (
+    <div className="border-t border-gray-100 dark:border-gray-800 pt-2 space-y-1">
+      <div className="flex items-center justify-between">
+        <span className="text-xs text-gray-500">XSIAM correlation rule</span>
+        <button
+          onClick={copy}
+          className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 transition-colors"
+        >
+          {copied ? <Check size={11} className="text-green-500" /> : <Copy size={11} />}
+          {copied ? 'Copied' : 'Copy'}
+        </button>
+      </div>
+      <pre className="text-xs font-mono text-gray-600 dark:text-gray-400 whitespace-pre-wrap break-all leading-relaxed bg-gray-50 dark:bg-gray-800/50 rounded p-2">
+        {rule.xql_query}
+      </pre>
+      {confirmOverwrite ? (
+        <div className="flex items-center gap-2 text-xs text-yellow-700 dark:text-yellow-300">
+          <AlertTriangle size={11} className="flex-shrink-0" />
+          <span>Rule exists on tenant — overwrite?</span>
+          <button
+            onClick={() => push(true)}
+            disabled={busy}
+            className="px-2 py-0.5 bg-yellow-600 hover:bg-yellow-700 disabled:opacity-50 rounded text-white transition-colors"
+          >
+            Overwrite
+          </button>
+          <button
+            onClick={() => setConfirmOverwrite(false)}
+            className="px-2 py-0.5 bg-gray-300 dark:bg-gray-700 hover:bg-gray-400 dark:hover:bg-gray-600 rounded transition-colors"
+          >
+            Cancel
+          </button>
+        </div>
+      ) : (
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => push(false)}
+            disabled={busy}
+            className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 rounded text-xs text-white transition-colors"
+          >
+            {busy ? 'Working…' : 'Push to XSIAM'}
+          </button>
+          <button
+            onClick={remove}
+            disabled={busy}
+            className="px-2.5 py-1 bg-gray-300 dark:bg-gray-700 hover:bg-gray-400 dark:hover:bg-gray-600 disabled:opacity-50 rounded text-xs transition-colors"
+          >
+            Remove
+          </button>
+        </div>
+      )}
     </div>
   )
 }

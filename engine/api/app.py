@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from api.routers import sources, config, stats, control, diagnostics, certs
+from api.routers import sources, config, stats, control, correlations, diagnostics, certs
 from main import get_engine
 from utils.logger import get_logger
 from config.settings import settings
@@ -26,6 +26,8 @@ async def lifespan(app: FastAPI):
             await engine.start_source(sid)
     yield
     await engine.close()
+    from xsiam_api import xsiam_api_client
+    await xsiam_api_client.close()
     logger.info({"event": "api_shutdown"})
 
 
@@ -56,6 +58,7 @@ app.include_router(config.router)
 app.include_router(certs.router)
 app.include_router(stats.router)
 app.include_router(control.router)
+app.include_router(correlations.router)
 app.include_router(diagnostics.router)
 
 

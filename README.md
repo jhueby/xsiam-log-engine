@@ -130,6 +130,9 @@ All settings load from `.env` (see [`.env.example`](.env.example)). They can als
 | `ENGINE_DEFAULT_EPS` | Global default events/sec for new sources | `10` |
 | `ENGINE_LOG_LEVEL` | `DEBUG` / `INFO` / `WARNING` / `ERROR` | `INFO` |
 | `ENGINE_API_TOKEN` | Optional token required on every `/api/*` request | _(disabled)_ |
+| `XSIAM_API_URL` | XSIAM public (management) API base for correlation rules (`https://api-<tenant>`, no path) | — |
+| `XSIAM_API_KEY_ID` | API key ID (sent as `x-xdr-auth-id`) | — |
+| `XSIAM_API_SECRET` | API key value (sent as `Authorization`) — needs a **standard** key with Instance Administrator role | — |
 
 ---
 
@@ -168,7 +171,8 @@ Add it under **Settings → XDR Data Management → Parsers → New Parser** in 
 
 - **Dashboard** — live aggregate stats (EPS, sent, errors, per-transport counts), transport health, Start/Stop All (Stop All is two-click to confirm), and first-run / circuit-breaker banners.
 - **Sources** — searchable, tag-filterable grid. Per card: enable toggle, log-scale EPS slider with numeric entry, transport selector, HTTP log-type/compression/API-key, and the copyable parsing rule.
-- **Configuration** — XSIAM + BrokerVM settings and the `.pfx` upload.
+- **Correlation Rules** — engine-managed XSIAM correlation rules (`[LogSim]` prefix): tenant state, per-row remove, Remove All. Rules are pushed/removed per source from its card; the backend always lists tenant rules first, so an existing rule is never silently overwritten (explicit overwrite confirm) and removals of absent rules fail cleanly.
+- **Configuration** — XSIAM + BrokerVM settings, the XSIAM Public API credentials (with a staged **Test connection** probe), and the `.pfx` upload.
 - **Log Viewer** — live SSE tail with pause (buffers while paused), text search, success/error filter, raw/pretty toggle, and NDJSON download.
 - **Diagnostics** — engine log stream with Off / Errors / Informational levels; shows outgoing request previews and full transport error responses.
 
@@ -189,6 +193,12 @@ All routes are under `/api`. When `ENGINE_API_TOKEN` is set, send it as the `X-E
 | PATCH | `/api/sources/{id}/config` | Update EPS / transport / HTTP settings |
 | GET | `/api/config` | Get transport config (API key masked) |
 | PUT | `/api/config` | Update config (persists to `.env`, live reload) |
+| POST | `/api/config/validate` | Staged probe of the XSIAM Public API settings |
+| GET | `/api/correlations` | List engine-managed correlation rules on the tenant (`?all=true` for every rule) |
+| GET | `/api/correlations/{id}/preview` | Generated rule for a source (local, no tenant call) |
+| POST | `/api/correlations/{id}` | Push a source's rule (list-first; 409 unless `?overwrite=true`) |
+| DELETE | `/api/correlations/{id}` | Remove a source's rule (404 if absent on tenant) |
+| DELETE | `/api/correlations` | Remove all engine-managed (`[LogSim]`) rules |
 | POST | `/api/certs/pfx` | Upload WEC client certificate (`.pfx` / PKCS#12) |
 | GET | `/api/stats` | Aggregate statistics |
 | GET | `/api/stats/sources` | Per-source statistics |
@@ -243,6 +253,7 @@ engine/
   api/            FastAPI app, routers (sources, config, stats, control, diagnostics, certs), models
   sources/        one file per log source (auto-discovered)
   transports/     http, syslog, wec
+  xsiam_api/      XSIAM public-API client + rule generation (correlation rules)
   config/         settings (pydantic-settings), defaults.yaml
   utils/          rate limiter, diagnostics buffer, faker helpers, logger
 gui/

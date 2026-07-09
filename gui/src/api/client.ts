@@ -47,6 +47,7 @@ export interface SourceInfo {
   http_compression: HttpCompression
   http_api_key: string  // '***' if set, '' if using global
   auto_disabled_reason: string | null
+  xsiam_dataset: string  // effective dataset (source override or global default)
 }
 
 export interface StatsResponse {
@@ -62,6 +63,9 @@ export interface TransportConfig {
   xsiam_url: string
   xsiam_api_key: string   // masked as '***' on GET
   xsiam_dataset: string
+  xsiam_api_url: string
+  xsiam_api_key_id: string
+  xsiam_api_secret: string  // masked as '***' on GET
   brokervm_host: string
   brokervm_syslog_port: number
   brokervm_syslog_proto: 'udp' | 'tcp' | 'tls'
@@ -109,6 +113,44 @@ export const uploadPfx = (file: File, passphrase: string) => {
 }
 
 export const getHealth = () => api.get<HealthResponse>('/health')
+
+export interface CorrelationRuleInfo {
+  name: string
+  source_id: string | null  // parsed from the [LogSim] prefix; null for unmanaged
+  managed: boolean
+  severity: string
+  dataset: string
+  xql_query: string
+  description: string
+  enabled: boolean
+}
+
+export interface CorrelationApplyResponse {
+  ok: boolean
+  message: string
+  rule: CorrelationRuleInfo
+}
+
+export interface ValidationCheck {
+  name: 'configured' | 'reachable' | 'authenticated' | 'correlations_access'
+  ok: boolean
+  detail: string
+}
+
+export interface ConfigValidationResponse {
+  ok: boolean
+  checks: ValidationCheck[]
+}
+
+export const getCorrelationRules = (all = false) =>
+  api.get<CorrelationRuleInfo[]>('/correlations', { params: { all } })
+export const previewCorrelationRule = (id: string) =>
+  api.get<CorrelationRuleInfo>(`/correlations/${id}/preview`)
+export const applyCorrelationRule = (id: string, overwrite = false) =>
+  api.post<CorrelationApplyResponse>(`/correlations/${id}`, null, { params: { overwrite } })
+export const deleteCorrelationRule = (id: string) => api.delete(`/correlations/${id}`)
+export const deleteAllCorrelationRules = () => api.delete('/correlations')
+export const validateConfig = () => api.post<ConfigValidationResponse>('/config/validate')
 
 export const startAll = () => api.post('/control/start-all')
 export const stopAll = () => api.post('/control/stop-all')

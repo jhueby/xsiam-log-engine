@@ -1,8 +1,9 @@
 import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom'
 import { useEffect, useState } from 'react'
-import { Activity, Settings, List, Eye, Terminal } from 'lucide-react'
+import { Activity, Settings, List, Eye, Terminal, GitBranch } from 'lucide-react'
 import Dashboard from './pages/Dashboard'
 import Configuration from './pages/Configuration'
+import CorrelationRules from './pages/CorrelationRules'
 import Sources from './pages/Sources'
 import LogViewer from './pages/LogViewer'
 import Diagnostics from './pages/Diagnostics'
@@ -16,6 +17,7 @@ import { getHealth, HealthResponse } from './api/client'
 const nav = [
   { to: '/', label: 'Dashboard', icon: Activity },
   { to: '/sources', label: 'Sources', icon: List },
+  { to: '/correlations', label: 'Correlation Rules', icon: GitBranch },
   { to: '/config', label: 'Configuration', icon: Settings },
   { to: '/logs', label: 'Log Viewer', icon: Eye },
   { to: '/diagnostics', label: 'Diagnostics', icon: Terminal },
@@ -91,6 +93,7 @@ export default function App() {
               <Routes>
                 <Route path="/" element={<Dashboard />} />
                 <Route path="/sources" element={<Sources />} />
+                <Route path="/correlations" element={<CorrelationRules />} />
                 <Route path="/config" element={<Configuration />} />
                 <Route path="/logs" element={<LogViewer />} />
                 <Route path="/diagnostics" element={<Diagnostics />} />

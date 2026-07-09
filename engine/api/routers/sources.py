@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 
 from api.models import SourceInfo, SourceConfigPatch, ControlResponse
+from config.settings import settings
 from main import get_engine
 
 router = APIRouter(prefix="/api/sources", tags=["sources"])
@@ -32,6 +33,7 @@ def _state_to_info(sid: str) -> SourceInfo:
         http_compression=state.http_compression,
         http_api_key="***" if state.http_api_key else "",
         auto_disabled_reason=state.auto_disabled_reason,
+        xsiam_dataset=getattr(src, "xsiam_dataset", "") or settings.xsiam_dataset,
     )
 
 

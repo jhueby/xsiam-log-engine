@@ -26,6 +26,13 @@ class Settings(BaseSettings):
     xsiam_api_key: str = "changeme"
     xsiam_dataset: str = "xsiam_log_engine"
 
+    # XSIAM Public API (correlation rules) — a different host than the ingest
+    # collector above. Requires a *standard* API key with the Instance
+    # Administrator role.
+    xsiam_api_url: str = ""  # e.g. https://api-<tenant>.xdr.us.paloaltonetworks.com (no path)
+    xsiam_api_key_id: str = ""  # sent as the x-xdr-auth-id header
+    xsiam_api_secret: str = ""  # sent as the Authorization header
+
     # BrokerVM
     brokervm_host: str = "127.0.0.1"
     brokervm_syslog_port: int = 514
