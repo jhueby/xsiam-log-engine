@@ -43,6 +43,9 @@ certs/
 *.swp
 *.swo
 
+# Claude Code (local-only tooling, never pushed)
+.claude/
+
 # OS
 .DS_Store
 Thumbs.db
