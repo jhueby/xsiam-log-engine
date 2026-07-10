@@ -94,10 +94,12 @@ def _process_rollup2(host: str | None = None, user: str | None = None) -> dict:
 
 def _network_connect(host: str | None = None, user: str | None = None) -> dict:
     host = host or random_windows_host()
+    user = user or random_user()
     proc = random.choice(PROCESSES_WINDOWS)
     return {
         "EventType": "NetworkConnect",
         "ComputerName": host,
+        "UserName": f"CORP\\{user}",
         "LocalAddressIP4": random_internal_ip(),
         "LocalPort": random_port(),
         "RemoteAddressIP4": random_external_ip(),
@@ -113,10 +115,12 @@ def _dns_request(host: str | None = None, user: str | None = None) -> dict:
     from faker import Faker
     f = Faker()
     host = host or random_windows_host()
+    user = user or random_user()
     proc = random.choice(PROCESSES_WINDOWS)
     return {
         "EventType": "DnsRequest",
         "ComputerName": host,
+        "UserName": f"CORP\\{user}",
         "DomainName": f.domain_name(),
         "RequestType": random.choice(["A", "AAAA", "MX", "TXT"]),
         "InterfaceIndex": random.randint(1, 10),
@@ -166,7 +170,9 @@ class CrowdStrikeFalconSource(LogSource):
         self, entities: ScenarioEntities, overrides: dict | None = None
     ) -> LogEvent:
         overrides = overrides or {}
-        event_type = overrides.get("event_type") or random.choices(_EVENT_TYPES, weights=_TYPE_WEIGHTS)[0]
+        # .get(key, default) -- not `or` -- so an explicit falsy override
+        # (e.g. "") is honored instead of silently replaced by random data.
+        event_type = overrides.get("event_type", random.choices(_EVENT_TYPES, weights=_TYPE_WEIGHTS)[0])
         return self._build(event_type, host=entities.host, user=entities.username)
 
     def _build(self, event_type: str, host: str | None = None, user: str | None = None) -> LogEvent:

@@ -161,6 +161,43 @@ async def test_remove_all_only_touches_managed(client):
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_remove_all_deletes_concurrently_not_sequentially(client):
+    okta2 = {**OKTA_RULE, "name": "[LogSim] crowdstrike_falcon"}
+    _mock_list([OKTA_RULE, okta2, USER_RULE])
+    delete_route = respx.delete(CORR_URL).mock(return_value=Response(200, json={"reply": True}))
+
+    resp = await client.delete("/api/correlations")
+    assert resp.status_code == 200
+    assert delete_route.call_count == 2
+    deleted_names = {c.request.content.decode() for c in delete_route.calls}
+    assert any("[LogSim] okta" in n for n in deleted_names)
+    assert any("[LogSim] crowdstrike_falcon" in n for n in deleted_names)
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_remove_all_config_cleared_midflight_returns_400_not_502(client, monkeypatch):
+    # XsiamApiNotConfigured is a subclass of XsiamApiError -- if the generic
+    # except clause catches it first, this would misreport as an ordinary
+    # per-rule delivery failure (502) instead of the distinct 400 every other
+    # endpoint uses for "not configured".
+    from xsiam_api.client import XsiamApiNotConfigured
+
+    okta2 = {**OKTA_RULE, "name": "[LogSim] crowdstrike_falcon"}
+    _mock_list([OKTA_RULE, okta2])
+
+    async def fake_delete_rule(name):
+        raise XsiamApiNotConfigured()
+
+    monkeypatch.setattr(xsiam_api_client, "delete_rule", fake_delete_rule)
+
+    resp = await client.delete("/api/correlations")
+    assert resp.status_code == 400
+    assert "not configured" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_upstream_403_maps_to_502(client):
     respx.get(CORR_URL).mock(return_value=Response(403, json={"reply": {"err_msg": "forbidden"}}))
 

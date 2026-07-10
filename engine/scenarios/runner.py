@@ -68,8 +68,10 @@ class ScenarioRunner:
     def __init__(self, engine: "Engine") -> None:
         self.engine = engine
         self.definitions: dict[str, dict] = load_scenarios()
+        # dict preserves insertion order (Python 3.7+); that ordering is all
+        # list_runs()/_prune_history() need, so there's no separate index to
+        # keep in sync.
         self.runs: dict[str, ScenarioRun] = {}
-        self._run_order: list[str] = []  # oldest-first; bounds retained history
 
     def list_scenarios(self) -> list[dict]:
         return list(self.definitions.values())
@@ -78,7 +80,7 @@ class ScenarioRunner:
         return self.definitions.get(scenario_id)
 
     def list_runs(self) -> list[ScenarioRun]:
-        return [self.runs[rid] for rid in reversed(self._run_order)]
+        return list(reversed(self.runs.values()))
 
     def get_run(self, run_id: str) -> ScenarioRun | None:
         return self.runs.get(run_id)
@@ -109,29 +111,38 @@ class ScenarioRunner:
         )
         run.task = asyncio.create_task(self._execute(run))
         self.runs[run.run_id] = run
-        self._run_order.append(run.run_id)
         self._prune_history()
         return run
 
     def _prune_history(self) -> None:
-        while len(self._run_order) > MAX_RUN_HISTORY:
-            oldest_id = self._run_order.pop(0)
-            old_run = self.runs.pop(oldest_id, None)
-            if old_run and old_run.task and not old_run.task.done():
-                old_run.task.cancel()
+        # Only evict finished runs (completed/cancelled/failed), oldest first.
+        # A still-running scenario is never evicted just because newer runs
+        # started -- if everything in history happens to be running, history
+        # simply grows past MAX_RUN_HISTORY rather than killing user-visible work.
+        while len(self.runs) > MAX_RUN_HISTORY:
+            evictable_id = next((rid for rid, r in self.runs.items() if r.status != "running"), None)
+            if evictable_id is None:
+                break
+            del self.runs[evictable_id]
 
-    def cancel(self, run_id: str) -> bool:
+    async def cancel(self, run_id: str) -> bool:
         run = self.runs.get(run_id)
         if not run or run.status != "running":
             return False
         if run.task:
             run.task.cancel()
+            try:
+                await asyncio.wait_for(run.task, timeout=5.0)
+            except asyncio.TimeoutError:
+                logger.error({"event": "scenario_cancel_timeout", "run_id": run_id})
         return True
 
     async def cancel_all(self) -> None:
-        for run in self.runs.values():
-            if run.status == "running" and run.task:
-                run.task.cancel()
+        tasks = [run.task for run in self.runs.values() if run.status == "running" and run.task]
+        for task in tasks:
+            task.cancel()
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     async def _execute(self, run: ScenarioRun) -> None:
         start = time.monotonic()

@@ -90,7 +90,7 @@ async def cancel_run(run_id: str) -> ScenarioRunInfo:
     run = runner.get_run(run_id)
     if not run:
         raise HTTPException(status_code=404, detail=f"Scenario run '{run_id}' not found")
-    if not runner.cancel(run_id):
+    if not await runner.cancel(run_id):
         raise HTTPException(status_code=400, detail=f"Run '{run_id}' is not running (status: {run.status})")
     return _run_to_info(run)
 

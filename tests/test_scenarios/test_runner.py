@@ -123,22 +123,41 @@ async def test_cancel_stops_a_running_scenario():
 
     run = runner.start("_slow")
     await asyncio.sleep(0.05)  # let step 1 fire, then we're waiting out the 10s delay
-    assert runner.cancel(run.run_id) is True
+    assert await runner.cancel(run.run_id) is True
 
-    await asyncio.wait_for(run.task, timeout=2)
     assert run.status == "cancelled"
     assert run.steps[1].status == "pending"
+
+
+@pytest.mark.asyncio
+async def test_cancel_returns_only_after_status_actually_updates(runner):
+    # Regression: cancel() previously returned immediately after calling
+    # task.cancel(), so the caller's response could still say "running"
+    # even though cancellation had been requested successfully.
+    slow = {
+        "id": "_slow2",
+        "name": "Slow",
+        "description": "",
+        "steps": [{"source": "okta", "delay": 30, "jitter": 0}],
+    }
+    runner.definitions["_slow2"] = slow
+    run = runner.start("_slow2")
+    await asyncio.sleep(0.01)
+
+    assert await runner.cancel(run.run_id) is True
+    assert run.status == "cancelled"  # already updated, not stale, by the time cancel() returns
 
 
 @pytest.mark.asyncio
 async def test_cancel_on_non_running_run_returns_false(runner):
     run = runner.start("_test")
     await asyncio.wait_for(run.task, timeout=2)
-    assert runner.cancel(run.run_id) is False
+    assert await runner.cancel(run.run_id) is False
 
 
-def test_cancel_unknown_run_returns_false(runner):
-    assert runner.cancel("nonexistent-run-id") is False
+@pytest.mark.asyncio
+async def test_cancel_unknown_run_returns_false(runner):
+    assert await runner.cancel("nonexistent-run-id") is False
 
 
 @pytest.mark.asyncio
@@ -150,3 +169,61 @@ async def test_run_history_is_capped(runner):
         await asyncio.wait_for(run.task, timeout=2)
 
     assert len(runner.list_runs()) == MAX_RUN_HISTORY
+
+
+@pytest.mark.asyncio
+async def test_prune_history_never_evicts_or_cancels_a_running_scenario(runner):
+    # Regression: history pruning previously evicted purely by insertion
+    # count, cancelling a still-in-progress run just because MAX_RUN_HISTORY
+    # newer runs had started.
+    from scenarios.runner import MAX_RUN_HISTORY
+
+    long_running = {
+        "id": "_long",
+        "name": "Long",
+        "description": "",
+        "steps": [{"source": "okta", "delay": 30, "jitter": 0}],
+    }
+    runner.definitions["_long"] = long_running
+    first = runner.start("_long")
+
+    for _ in range(MAX_RUN_HISTORY + 5):
+        run = runner.start("_test")
+        await asyncio.wait_for(run.task, timeout=2)
+
+    # The cap still holds -- pruning evicted enough *completed* runs to fit --
+    # but it held by leaving the running one alone, not by killing it.
+    assert len(runner.runs) == MAX_RUN_HISTORY
+    assert runner.get_run(first.run_id) is not None
+    assert first.status == "running"
+    assert not first.task.done()
+
+    await runner.cancel(first.run_id)  # clean up the background task
+
+    # If literally everything in history is still running, there's nothing
+    # left to evict -- history grows past the cap rather than killing work.
+    runner2 = ScenarioRunner(FakeEngine())
+    runner2.definitions = {"_long": long_running}
+    running_runs = [runner2.start("_long") for _ in range(MAX_RUN_HISTORY + 3)]
+    assert len(runner2.runs) == MAX_RUN_HISTORY + 3
+    assert all(r.status == "running" for r in running_runs)
+    await asyncio.gather(*(runner2.cancel(r.run_id) for r in running_runs))
+
+
+@pytest.mark.asyncio
+async def test_cancel_all_awaits_tasks_before_returning():
+    slow = {
+        "id": "_slow3",
+        "name": "Slow",
+        "description": "",
+        "steps": [{"source": "okta", "delay": 30, "jitter": 0}],
+    }
+    runner = ScenarioRunner(FakeEngine())
+    runner.definitions = {"_slow3": slow}
+    run = runner.start("_slow3")
+    await asyncio.sleep(0.01)
+
+    await runner.cancel_all()
+
+    assert run.task.done()
+    assert run.status == "cancelled"

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+
 from fastapi import APIRouter, HTTPException
 
 from api.models import ControlResponse, CorrelationApplyResponse, CorrelationRuleInfo
@@ -116,13 +118,20 @@ async def remove_all_correlation_rules() -> ControlResponse:
     if not managed:
         return ControlResponse(ok=True, message="No engine-managed rules on the tenant")
 
-    failures: list[str] = []
-    for name in managed:
-        try:
-            await xsiam_api_client.delete_rule(name)
-        except (XsiamApiError, ValueError) as e:
-            failures.append(f"{name}: {e}")
+    results = await asyncio.gather(
+        *(xsiam_api_client.delete_rule(name) for name in managed),
+        return_exceptions=True,
+    )
 
+    # A config change mid-request surfaces as its own 400, not folded into
+    # per-rule failures below (XsiamApiNotConfigured is itself an
+    # XsiamApiError subclass, so it must be checked first or it's silently
+    # misreported as an ordinary delivery failure).
+    not_configured = next((r for r in results if isinstance(r, XsiamApiNotConfigured)), None)
+    if not_configured:
+        raise HTTPException(status_code=400, detail=not_configured.detail)
+
+    failures = [f"{name}: {r}" for name, r in zip(managed, results) if isinstance(r, BaseException)]
     removed = len(managed) - len(failures)
     logger.info({"event": "correlation_rules_removed_all", "removed": removed, "failed": len(failures)})
     if failures:

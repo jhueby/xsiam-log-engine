@@ -117,12 +117,12 @@ async def test_cancel_run(client):
     run = (await client.post("/api/scenarios/_slow_for_cancel/run")).json()
     resp = await client.post(f"/api/scenarios/runs/{run['run_id']}/cancel")
     assert resp.status_code == 200
+    # The cancel response itself must already reflect the final status --
+    # regression check for cancel() returning before the task had actually
+    # finished unwinding.
+    assert resp.json()["status"] == "cancelled"
 
-    for _ in range(20):
-        detail = (await client.get(f"/api/scenarios/runs/{run['run_id']}")).json()
-        if detail["status"] == "cancelled":
-            break
-        await asyncio.sleep(0.05)
+    detail = (await client.get(f"/api/scenarios/runs/{run['run_id']}")).json()
     assert detail["status"] == "cancelled"
 
 

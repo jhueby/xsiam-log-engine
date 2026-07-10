@@ -59,11 +59,13 @@ class AWSCloudTrailSource(LogSource):
         self, entities: ScenarioEntities, overrides: dict | None = None
     ) -> LogEvent:
         overrides = overrides or {}
-        event_name = overrides.get("event_name") or weighted_choice(_EVENT_NAMES, [w for _, w in _EVENT_NAMES])[0]
+        # .get(key, default) -- not `or` -- so an explicit falsy override
+        # (e.g. "") is honored instead of silently replaced by random data.
+        event_name = overrides.get("event_name", weighted_choice(_EVENT_NAMES, [w for _, w in _EVENT_NAMES])[0])
         return self._build(
             event_name=event_name,
             user=entities.username,
-            source_ip=overrides.get("source_ip") or entities.external_ip,
+            source_ip=overrides.get("source_ip", entities.external_ip),
         )
 
     def _build(self, event_name: str, user: str, source_ip: str) -> LogEvent:

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import stat
 import subprocess
 import tempfile
 from pathlib import Path
@@ -31,6 +30,23 @@ class PfxUploadResult(BaseModel):
     key_path: str
     subject: str
     expires: str
+
+
+def _write_private(path: Path, data: bytes) -> None:
+    """Create/overwrite a file at 0600. For a new file, os.open's mode is
+    applied by the OS at creation, so it's never briefly observable at a
+    wider (umask-controlled) permission the way write_bytes()-then-chmod()
+    would be. os.open's mode argument is silently ignored if the path
+    already exists though (POSIX open(2) only honors it on creation), so
+    fchmod right after open covers that case too -- before any new data is
+    written, not after, keeping the exposure window a single syscall wide
+    instead of a full write."""
+    fd = os.open(str(path), os.O_CREAT | os.O_WRONLY | os.O_TRUNC, 0o600)
+    try:
+        os.fchmod(fd, 0o600)
+        os.write(fd, data)
+    finally:
+        os.close(fd)
 
 
 async def _read_capped(file: UploadFile, max_bytes: int) -> bytes:
@@ -84,9 +100,11 @@ async def upload_pfx(
 ) -> PfxUploadResult:
     data = await _read_capped(file, MAX_PFX_BYTES)
 
+    # mkstemp() already creates the file at 0600 (owner-only) by default, so
+    # no separate chmod is needed here -- one less syscall and one less
+    # exception window between creating the fd and closing it.
     fd, tmp_path = tempfile.mkstemp(suffix=".pfx")
     try:
-        os.chmod(tmp_path, stat.S_IRUSR | stat.S_IWUSR)  # 0600 — holds raw PKCS#12 bytes
         with os.fdopen(fd, "wb") as tmp:
             tmp.write(data)
 
@@ -100,10 +118,8 @@ async def upload_pfx(
     cert_path = _CERTS_DIR / "wec.crt"
     key_path = _CERTS_DIR / "wec.key"
 
-    cert_path.write_bytes(cert_pem)
-    os.chmod(cert_path, stat.S_IRUSR | stat.S_IWUSR)  # 0600; the dir is already private
-    key_path.write_bytes(key_pem)
-    os.chmod(key_path, stat.S_IRUSR | stat.S_IWUSR)  # 0600 — private key material
+    _write_private(cert_path, cert_pem)
+    _write_private(key_path, key_pem)  # private key material
 
     try:
         cert = load_pem_x509_certificate(cert_pem)

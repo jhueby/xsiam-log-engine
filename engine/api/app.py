@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import secrets
 from contextlib import asynccontextmanager
+from urllib.parse import quote
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.openapi.docs import get_redoc_html, get_swagger_ui_html
+from fastapi.responses import HTMLResponse, JSONResponse
 
 from api.routers import sources, config, stats, control, correlations, scenarios, diagnostics, certs
 from main import get_engine
@@ -36,6 +38,10 @@ app = FastAPI(
     version="1.0.0",
     description="Enterprise log simulation engine for XSIAM / Cortex XDR",
     lifespan=lifespan,
+    # Custom /docs and /redoc routes below bake the token into the
+    # openapi_url they render, so disable FastAPI's auto-mounted ones.
+    docs_url=None,
+    redoc_url=None,
 )
 
 # No CORS middleware: the GUI is served same-origin (nginx in prod, vite proxy
@@ -72,3 +78,22 @@ app.include_router(diagnostics.router)
 @app.get("/")
 async def root():
     return {"service": "xsiam-log-engine", "version": "1.0.0"}
+
+
+def _openapi_url_for(request: Request) -> str:
+    """The static Swagger UI/ReDoc HTML makes its own browser-side fetch to
+    openapi_url — it can't carry the X-Engine-Token header, so when a token
+    is configured we bake the same ?token= this request was authenticated
+    with into that URL, or the docs page loads but the schema fetch 401s."""
+    token = request.query_params.get("token", "")
+    return f"/openapi.json?token={quote(token)}" if token else "/openapi.json"
+
+
+@app.get("/docs", include_in_schema=False)
+async def custom_swagger_ui(request: Request) -> HTMLResponse:
+    return get_swagger_ui_html(openapi_url=_openapi_url_for(request), title=f"{app.title} - Swagger UI")
+
+
+@app.get("/redoc", include_in_schema=False)
+async def custom_redoc(request: Request) -> HTMLResponse:
+    return get_redoc_html(openapi_url=_openapi_url_for(request), title=f"{app.title} - ReDoc")

@@ -54,12 +54,14 @@ class OktaSource(LogSource):
         self, entities: ScenarioEntities, overrides: dict | None = None
     ) -> LogEvent:
         overrides = overrides or {}
-        event_type = overrides.get("event_type") or weighted_choice(_EVENT_TYPES, [w for _, w in _EVENT_TYPES])[0]
+        # .get(key, default) -- not `or` -- so an explicit falsy override
+        # (e.g. "") is honored instead of silently replaced by random data.
+        event_type = overrides.get("event_type", weighted_choice(_EVENT_TYPES, [w for _, w in _EVENT_TYPES])[0])
         return self._build(
             event_type=event_type,
             user=entities.domain_user,
-            outcome=overrides.get("outcome") or random.choices(_OUTCOMES, weights=_OUT_WEIGHTS)[0],
-            ip=overrides.get("ip") or entities.external_ip,
+            outcome=overrides.get("outcome", random.choices(_OUTCOMES, weights=_OUT_WEIGHTS)[0]),
+            ip=overrides.get("ip", entities.external_ip),
         )
 
     def _build(self, event_type: str, user: str, outcome: str, ip: str) -> LogEvent:

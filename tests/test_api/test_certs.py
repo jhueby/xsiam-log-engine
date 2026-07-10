@@ -95,6 +95,29 @@ async def test_upload_at_cap_boundary_is_accepted_by_size_check(client, pfx_byte
     assert resp.status_code == 413
 
 
+def test_write_private_creates_file_at_0600_atomically(tmp_path):
+    # Regression: the file must never be observable at a wider,
+    # umask-controlled permission between creation and a later chmod --
+    # os.open's mode is applied by the OS at creation time, so there's no
+    # window at all, unlike write_bytes() followed by a separate chmod().
+    target = tmp_path / "secret.key"
+    certs_module._write_private(target, b"private-key-bytes")
+
+    assert target.read_bytes() == b"private-key-bytes"
+    assert stat.S_IMODE(os.stat(target).st_mode) == 0o600
+
+
+def test_write_private_overwrites_existing_file_at_0600(tmp_path):
+    target = tmp_path / "secret.key"
+    target.write_bytes(b"old")
+    os.chmod(target, 0o644)  # simulate a pre-existing, loosely-permissioned file
+
+    certs_module._write_private(target, b"new")
+
+    assert target.read_bytes() == b"new"
+    assert stat.S_IMODE(os.stat(target).st_mode) == 0o600
+
+
 def test_openssl_pkcs12_never_puts_passphrase_in_argv(monkeypatch, pfx_bytes, tmp_path):
     pfx_path = tmp_path / "in.pfx"
     pfx_path.write_bytes(pfx_bytes)

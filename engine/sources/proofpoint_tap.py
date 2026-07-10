@@ -83,10 +83,12 @@ def _message_parts(threat_type: str) -> list[dict]:
 def _message_event(blocked: bool, recipient: str | None = None, sender_ip: str | None = None) -> dict:
     threat_type = random.choices(_THREAT_TYPES, weights=_THREAT_WEIGHTS)[0]
     classification = random.choices(_CLASSIFICATIONS, weights=_CLASS_WEIGHTS)[0]
-    recipient = recipient or random_domain_user()
+    # `is None` -- not `or` -- so a caller-supplied falsy value (e.g. "") is
+    # honored instead of silently replaced by fresh random data.
+    recipient = random_domain_user() if recipient is None else recipient
     sender_domain = fake.domain_name()
     sender = f"{fake.user_name()}@{sender_domain}"
-    sender_ip = sender_ip or random_external_ip()
+    sender_ip = random_external_ip() if sender_ip is None else sender_ip
     now = datetime.now(timezone.utc)
 
     malware_score = random.randint(60, 100) if classification == "malware" else random.randint(0, 20)
@@ -131,7 +133,9 @@ def _message_event(blocked: bool, recipient: str | None = None, sender_ip: str |
 def _click_event(blocked: bool, recipient: str | None = None, click_ip: str | None = None) -> dict:
     classification = random.choices(["malware", "phish"], weights=[40, 60])[0]
     threat_type = "url"
-    recipient = recipient or random_domain_user()
+    # `is None` -- not `or` -- so a caller-supplied falsy value (e.g. "") is
+    # honored instead of silently replaced by fresh random data.
+    recipient = random_domain_user() if recipient is None else recipient
     sender = f"{fake.user_name()}@{fake.domain_name()}"
     now = datetime.now(timezone.utc)
     threat_id = uuid.uuid4().hex * 2
@@ -139,7 +143,7 @@ def _click_event(blocked: bool, recipient: str | None = None, click_ip: str | No
     return {
         "campaignId": f"tid-{uuid.uuid4().hex[:12]}" if random.random() < 0.7 else None,
         "classification": classification,
-        "clickIP": click_ip or random_internal_ip(),
+        "clickIP": random_internal_ip() if click_ip is None else click_ip,
         "clickTime": now.isoformat(),
         "GUID": str(uuid.uuid4()),
         "id": str(uuid.uuid4()),
@@ -185,19 +189,21 @@ class ProofpointTAPSource(LogSource):
         self, entities: ScenarioEntities, overrides: dict | None = None
     ) -> LogEvent:
         overrides = overrides or {}
-        event_type = overrides.get("event_type") or random.choices(_EVENT_TYPES, weights=_TYPE_WEIGHTS)[0]
+        # .get(key, default) -- not `or` -- so an explicit falsy override
+        # (e.g. "") is honored instead of silently replaced by random data.
+        event_type = overrides.get("event_type", random.choices(_EVENT_TYPES, weights=_TYPE_WEIGHTS)[0])
         recipient = entities.domain_user
         if event_type in ("messagesBlocked", "messagesDelivered"):
             event = _message_event(
                 blocked=(event_type == "messagesBlocked"),
                 recipient=recipient,
-                sender_ip=overrides.get("sender_ip") or entities.external_ip,
+                sender_ip=overrides.get("sender_ip", entities.external_ip),
             )
         else:
             event = _click_event(
                 blocked=(event_type == "clicksBlocked"),
                 recipient=recipient,
-                click_ip=overrides.get("click_ip") or entities.internal_ip,
+                click_ip=overrides.get("click_ip", entities.internal_ip),
             )
         return self._wrap(event)
 

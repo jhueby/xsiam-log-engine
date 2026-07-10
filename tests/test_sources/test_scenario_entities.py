@@ -67,3 +67,50 @@ async def test_non_participating_source_falls_back_to_generate():
     event = await source.generate_with_entities(ENTITIES, {"event_type": "whatever"})
     assert event.source_id == "cisco_asa"
     assert event.raw
+
+
+@pytest.mark.asyncio
+async def test_crowdstrike_network_and_dns_events_also_carry_the_correlated_user():
+    # Regression: _network_connect/_dns_request accepted a `user` param for
+    # signature parity but never used it, silently dropping identity
+    # correlation for these two event types even though every sibling
+    # generator in the file honors it.
+    source = get_registry()["crowdstrike_falcon"]
+
+    network = await source.generate_with_entities(ENTITIES, {"event_type": "NetworkConnect"})
+    data = json.loads(network.raw)
+    assert data["ComputerName"] == "WIN-TESTHOST"
+    assert data["UserName"] == "CORP\\jsmith"
+
+    dns = await source.generate_with_entities(ENTITIES, {"event_type": "DnsRequest"})
+    data = json.loads(dns.raw)
+    assert data["ComputerName"] == "WIN-TESTHOST"
+    assert data["UserName"] == "CORP\\jsmith"
+
+
+# ── Regression: an explicit falsy override must be honored, not silently
+# replaced by random data (the old `overrides.get(x) or default` pattern
+# treated "" the same as "key absent"). ─────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_okta_honors_falsy_ip_override():
+    source = get_registry()["okta"]
+    event = await source.generate_with_entities(ENTITIES, {"ip": ""})
+    data = json.loads(event.raw)
+    assert data["client"]["ipAddress"] == ""
+
+
+@pytest.mark.asyncio
+async def test_aws_cloudtrail_honors_falsy_source_ip_override():
+    source = get_registry()["aws_cloudtrail"]
+    event = await source.generate_with_entities(ENTITIES, {"source_ip": ""})
+    data = json.loads(event.raw)
+    assert data["sourceIPAddress"] == ""
+
+
+@pytest.mark.asyncio
+async def test_proofpoint_honors_falsy_sender_ip_override():
+    source = get_registry()["proofpoint_tap"]
+    event = await source.generate_with_entities(ENTITIES, {"event_type": "messagesBlocked", "sender_ip": ""})
+    data = json.loads(event.raw)
+    assert data["senderIP"] == ""

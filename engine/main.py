@@ -221,10 +221,13 @@ class Engine:
     def get_stats(self) -> dict:
         total_sent = sum(s.total_sent for s in self.sources.values())
         total_errors = sum(s.total_errors for s in self.sources.values())
+        # Unconditional, mirroring total_sent above: both are lifetime counters,
+        # not "currently active" breakdowns. A source can accrue total_sent via
+        # a scenario firing even while disabled, and per_transport must still
+        # reconcile with total_sent when that happens.
         per_transport: dict[str, int] = {"http": 0, "syslog": 0, "wec": 0}
         for s in self.sources.values():
-            if s.enabled:
-                per_transport[s.transport_name] = per_transport.get(s.transport_name, 0) + s.total_sent
+            per_transport[s.transport_name] = per_transport.get(s.transport_name, 0) + s.total_sent
 
         eps_actual = sum(s.eps_window.rate() for s in self.sources.values())
 
