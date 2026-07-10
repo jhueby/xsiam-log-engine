@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import stat
 import subprocess
 import tempfile
 from pathlib import Path
@@ -19,6 +20,11 @@ _ENV_FILE = Path(os.environ.get("ENGINE_ENV_FILE") or str(
 ))
 _CERTS_DIR = Path(__file__).parent.parent.parent / "certs"
 
+# A PKCS#12 bundle holding one leaf cert + key is a few KB; this leaves
+# generous headroom for chains/intermediates while still bounding memory use
+# against an oversized or malicious upload.
+MAX_PFX_BYTES = 256 * 1024
+
 
 class PfxUploadResult(BaseModel):
     cert_path: str
@@ -27,16 +33,42 @@ class PfxUploadResult(BaseModel):
     expires: str
 
 
+async def _read_capped(file: UploadFile, max_bytes: int) -> bytes:
+    """Read an upload in chunks, aborting before buffering past max_bytes —
+    the declared Content-Length can't be trusted, so this caps actual reads."""
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = await file.read(64 * 1024)
+        if not chunk:
+            break
+        total += len(chunk)
+        if total > max_bytes:
+            raise HTTPException(
+                status_code=413,
+                detail=f"Upload exceeds the {max_bytes // 1024} KiB limit for a .pfx certificate bundle",
+            )
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
 def _openssl_pkcs12(pfx_path: str, passphrase: str, *extra_args: str) -> bytes:
     """Run openssl pkcs12 with the given extra args, trying -legacy first for
-    Windows-generated files that use RC2/3DES ciphers (OpenSSL 3.x provider)."""
-    pass_arg = f"pass:{passphrase}"
+    Windows-generated files that use RC2/3DES ciphers (OpenSSL 3.x provider).
+
+    The passphrase is sent over the child's stdin (-passin fd:0) rather than
+    as a `pass:...` argv value, which any local user could read off `ps`.
+    """
+    passin = passphrase.encode() + b"\n"
     for variant in (["-legacy"], []):
         try:
-            return subprocess.check_output(
-                ["openssl", "pkcs12", "-in", pfx_path, "-passin", pass_arg, *variant, *extra_args],
+            return subprocess.run(
+                ["openssl", "pkcs12", "-in", pfx_path, "-passin", "fd:0", *variant, *extra_args],
+                input=passin,
+                stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-            )
+                check=True,
+            ).stdout
         except subprocess.CalledProcessError:
             continue
     raise HTTPException(
@@ -50,23 +82,28 @@ async def upload_pfx(
     file: UploadFile = File(...),
     passphrase: str = Form(""),
 ) -> PfxUploadResult:
-    data = await file.read()
+    data = await _read_capped(file, MAX_PFX_BYTES)
 
-    with tempfile.NamedTemporaryFile(suffix=".pfx", delete=False) as tmp:
-        tmp.write(data)
-        tmp_path = tmp.name
-
+    fd, tmp_path = tempfile.mkstemp(suffix=".pfx")
     try:
+        os.chmod(tmp_path, stat.S_IRUSR | stat.S_IWUSR)  # 0600 — holds raw PKCS#12 bytes
+        with os.fdopen(fd, "wb") as tmp:
+            tmp.write(data)
+
         cert_pem = _openssl_pkcs12(tmp_path, passphrase, "-nokeys", "-clcerts")
         key_pem = _openssl_pkcs12(tmp_path, passphrase, "-nocerts", "-nodes")
     finally:
         os.unlink(tmp_path)
 
-    _CERTS_DIR.mkdir(exist_ok=True)
+    _CERTS_DIR.mkdir(exist_ok=True, mode=0o700)
+    os.chmod(_CERTS_DIR, 0o700)  # mkdir's mode is masked by umask; enforce it
     cert_path = _CERTS_DIR / "wec.crt"
     key_path = _CERTS_DIR / "wec.key"
+
     cert_path.write_bytes(cert_pem)
+    os.chmod(cert_path, stat.S_IRUSR | stat.S_IWUSR)  # 0600; the dir is already private
     key_path.write_bytes(key_pem)
+    os.chmod(key_path, stat.S_IRUSR | stat.S_IWUSR)  # 0600 — private key material
 
     try:
         cert = load_pem_x509_certificate(cert_pem)

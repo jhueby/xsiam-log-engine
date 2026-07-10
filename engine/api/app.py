@@ -42,10 +42,16 @@ app = FastAPI(
 # in dev), so cross-origin access to this API is intentionally blocked.
 
 
+# The OpenAPI docs UI/schema expose the full API surface (routes, models,
+# example payloads) and, unlike /api/*, aren't behind this middleware by
+# default in FastAPI — so gate them the same way once a token is configured.
+_TOKEN_GUARDED_PATHS = ("/api", "/docs", "/redoc", "/openapi.json")
+
+
 @app.middleware("http")
 async def require_api_token(request: Request, call_next):
     token = settings.engine_api_token
-    if token and request.url.path.startswith("/api"):
+    if token and request.url.path.startswith(_TOKEN_GUARDED_PATHS):
         # EventSource cannot set headers, so SSE clients pass ?token= instead.
         presented = request.headers.get("x-engine-token") or request.query_params.get("token") or ""
         if not secrets.compare_digest(presented, token):

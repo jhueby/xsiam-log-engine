@@ -220,12 +220,11 @@ All routes are under `/api`. When `ENGINE_API_TOKEN` is set, send it as the `X-E
 This is a lab/testing tool; defaults assume it runs on a trusted network. Current posture:
 
 - **Same-origin only** — no CORS middleware; the GUI reaches the API through the nginx (`/api/`) proxy. The engine port is published on `127.0.0.1` by Compose.
-- **Optional token auth** — set `ENGINE_API_TOKEN` to require a constant-time-compared token on every `/api/*` request (header, or `?token=` for SSE).
+- **Optional token auth** — set `ENGINE_API_TOKEN` to require a constant-time-compared token on every `/api/*` request (header, or `?token=` for SSE) — and on `/docs`, `/redoc`, and `/openapi.json`, which otherwise expose the full route/schema surface regardless of the token.
 - **Hardened container** — engine runs non-root with Compose resource limits; `.env` is excluded from images via `.dockerignore`.
 - **nginx headers** — `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, and a restrictive `Content-Security-Policy`.
 - **Secrets** — the API key is masked on `GET /api/config` and never logged; request/response previews in diagnostics exclude auth headers.
-
-A standing security backlog (private-key file permissions, OpenSSL passphrase handling, upload size caps, docs-endpoint exposure) is tracked separately and does not block lab use.
+- **WEC certificate handling** — the `.pfx` upload is capped at 256 KiB (checked against bytes actually read, not the declared `Content-Length`); the extracted key, cert, and the `certs/` directory itself are written `0600`/`0700`; and the openssl passphrase is passed over the child process's stdin (`-passin fd:0`), never as a `pass:...` argv value another local user could read off `ps`.
 
 ---
 
