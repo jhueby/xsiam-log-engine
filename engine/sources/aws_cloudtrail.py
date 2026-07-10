@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime, timezone
 from faker import Faker
 
-from sources.base_source import LogEvent, LogSource, TransportName
+from sources.base_source import LogEvent, LogSource, ScenarioEntities, TransportName
 from utils.faker_helpers import (
     AWS_REGIONS, AWS_ACCOUNT_IDS, AWS_SERVICES,
     random_external_ip, random_user, weighted_choice,
@@ -49,11 +49,27 @@ class AWSCloudTrailSource(LogSource):
 
     async def generate(self) -> LogEvent:
         event_name, _ = weighted_choice(_EVENT_NAMES, [w for _, w in _EVENT_NAMES])
+        return self._build(
+            event_name=event_name,
+            user=random_user(),
+            source_ip=random.choice([random_external_ip(), "AWS Internal"]),
+        )
+
+    async def generate_with_entities(
+        self, entities: ScenarioEntities, overrides: dict | None = None
+    ) -> LogEvent:
+        overrides = overrides or {}
+        event_name = overrides.get("event_name") or weighted_choice(_EVENT_NAMES, [w for _, w in _EVENT_NAMES])[0]
+        return self._build(
+            event_name=event_name,
+            user=entities.username,
+            source_ip=overrides.get("source_ip") or entities.external_ip,
+        )
+
+    def _build(self, event_name: str, user: str, source_ip: str) -> LogEvent:
         region = random.choice(AWS_REGIONS)
         account_id = random.choice(AWS_ACCOUNT_IDS)
         now = datetime.now(timezone.utc)
-        user = random_user()
-        source_ip = random.choice([random_external_ip(), "AWS Internal"])
         is_error = random.random() < 0.08
         error_code = random.choice(list(_ERROR_CODES.keys())) if is_error else None
 

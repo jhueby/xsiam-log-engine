@@ -1,0 +1,24 @@
+id: phishing_to_exfiltration
+name: Phishing to Exfiltration
+description: >
+  A phishing email lands and gets clicked, the victim's Okta identity signs
+  in successfully right after, CrowdStrike flags a detection on their
+  workstation, and the same identity touches S3 objects in AWS CloudTrail —
+  four vendors, one correlated story. Delays are seconds from scenario start.
+steps:
+  - source: proofpoint_tap
+    delay: 0
+    jitter: 2
+    overrides: {event_type: clicksBlocked}
+  - source: okta
+    delay: 20
+    jitter: 5
+    overrides: {event_type: "user.authentication.sso", outcome: SUCCESS}
+  - source: crowdstrike_falcon
+    delay: 75
+    jitter: 15
+    overrides: {event_type: Detection}
+  - source: aws_cloudtrail
+    delay: 150
+    jitter: 20
+    overrides: {event_name: GetObject}

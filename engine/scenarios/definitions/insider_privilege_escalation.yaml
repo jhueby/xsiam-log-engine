@@ -1,0 +1,24 @@
+id: insider_privilege_escalation
+name: Insider Privilege Escalation
+description: >
+  A user changes their own Okta password, then their AWS identity creates a
+  new access key and attaches an administrator policy to itself, and
+  CrowdStrike sees a burst of process activity on their workstation
+  consistent with recon tooling. Delays are seconds from scenario start.
+steps:
+  - source: okta
+    delay: 0
+    jitter: 3
+    overrides: {event_type: "user.account.update_password", outcome: SUCCESS}
+  - source: aws_cloudtrail
+    delay: 30
+    jitter: 5
+    overrides: {event_name: CreateAccessKey}
+  - source: aws_cloudtrail
+    delay: 45
+    jitter: 5
+    overrides: {event_name: AttachUserPolicy}
+  - source: crowdstrike_falcon
+    delay: 90
+    jitter: 15
+    overrides: {event_type: ProcessRollup2}

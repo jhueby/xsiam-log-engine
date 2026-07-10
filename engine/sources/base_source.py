@@ -15,6 +15,17 @@ class LogEvent:
     timestamp: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
 
 
+@dataclass(frozen=True)
+class ScenarioEntities:
+    """A shared identity/host resolved once per scenario run, so every step
+    that opts in produces events about the same person/machine."""
+    username: str       # bare form, e.g. "jsmith"
+    domain_user: str     # e.g. "jsmith@corp.local"
+    host: str
+    internal_ip: str
+    external_ip: str
+
+
 TransportName = Literal["http", "syslog", "wec"]
 
 
@@ -32,6 +43,17 @@ class LogSource(ABC):
 
     @abstractmethod
     async def generate(self) -> LogEvent: ...
+
+    async def generate_with_entities(
+        self, entities: ScenarioEntities, overrides: dict | None = None
+    ) -> LogEvent:
+        """Scenario-mode generation: substitute a shared identity/host/IP so
+        events from different sources tell one correlated story. Default
+        implementation ignores entities/overrides and falls back to normal
+        random generation — only sources that opt in produce correlated
+        output; every other source is safe to use in a scenario as-is.
+        """
+        return await self.generate()
 
     def to_dict(self) -> dict:
         return {

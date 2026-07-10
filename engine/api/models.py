@@ -110,3 +110,47 @@ class ValidationCheck(BaseModel):
 class ConfigValidationResponse(BaseModel):
     ok: bool
     checks: list[ValidationCheck]
+
+
+class ScenarioStepInfo(BaseModel):
+    source: str
+    delay: float
+    jitter: float
+    overrides: dict
+
+
+class ScenarioInfo(BaseModel):
+    id: str
+    name: str
+    description: str
+    steps: list[ScenarioStepInfo]
+
+
+class ScenarioEntitiesInfo(BaseModel):
+    username: str
+    domain_user: str
+    host: str
+    internal_ip: str
+    external_ip: str
+
+
+class ScenarioStepStatusInfo(BaseModel):
+    index: int
+    source: str
+    delay: float
+    jitter: float
+    overrides: dict
+    status: Literal["pending", "fired", "error"]
+    fired_at: str | None
+    error: str | None
+
+
+class ScenarioRunInfo(BaseModel):
+    run_id: str
+    scenario_id: str
+    scenario_name: str
+    started_at: str
+    status: Literal["running", "completed", "cancelled", "failed"]
+    error: str | None
+    entities: ScenarioEntitiesInfo
+    steps: list[ScenarioStepStatusInfo]

@@ -9,8 +9,9 @@ from datetime import datetime, timezone
 from typing import Any
 
 from config.settings import settings, load_defaults
+from scenarios.runner import ScenarioRunner
 from sources import get_registry
-from sources.base_source import LogSource, LogEvent
+from sources.base_source import LogSource, LogEvent, ScenarioEntities
 from transports.http_transport import HTTPTransport
 from transports.syslog_transport import SyslogTransport
 from transports.wec_transport import WECTransport
@@ -86,6 +87,7 @@ class Engine:
 
         self._log_ring: deque[dict] = deque(maxlen=LOG_RING_SIZE)
         self._running = False
+        self.scenarios = ScenarioRunner(self)
 
     def get_transport(self, name: str) -> Transport:
         return self._transports[name]
@@ -121,6 +123,63 @@ class Engine:
                 pass
         logger.info({"event": "source_stopped", "source": source_id})
 
+    async def _send_and_record(self, state: SourceState, event: LogEvent) -> bool:
+        """Send one already-generated event through a source's configured
+        transport and record it into stats/log ring. Shared by the normal
+        per-EPS loop and scenario-triggered firing so both paths show up
+        identically in the Dashboard, Log Viewer, and per-source stats."""
+        transport = self.get_transport(state.transport_name)
+        meta = SourceMeta(
+            source_id=state.source.id,
+            source_name=state.source.display_name,
+            format=event.format,
+            transport=state.transport_name,
+            hostname=(
+                event.structured.get("device")
+                or event.structured.get("host")
+                or ""
+            ),
+            facility=getattr(state.source, "syslog_facility", 1),
+            severity=getattr(state.source, "syslog_severity", 6),
+            dataset=getattr(state.source, "xsiam_dataset", "") or "",
+            http_log_type=state.http_log_type,
+            http_compression=state.http_compression,
+            http_api_key=state.http_api_key,
+        )
+        result = await transport.send(event.raw, meta)
+
+        now_ts = datetime.now(timezone.utc).isoformat()
+        state.last_event_ts = now_ts
+
+        log_entry = {
+            "source_id": state.source.id,
+            "timestamp": now_ts,
+            "transport": state.transport_name,
+            "format": event.format,
+            "raw": event.raw[:500],
+            "success": result.success,
+        }
+
+        if result.success:
+            state.total_sent += 1
+            state.eps_window.increment()
+        else:
+            state.total_errors += 1
+            log_entry["error"] = result.error
+
+        self._log_ring.append(log_entry)
+        return result.success
+
+    async def fire_scenario_event(
+        self, source_id: str, entities: ScenarioEntities, overrides: dict | None = None
+    ) -> bool:
+        """Generate and send one correlated scenario event for a source,
+        independent of whether that source is currently enabled/running its
+        own EPS loop. Raises KeyError for an unknown source_id."""
+        state = self.sources[source_id]
+        event = await state.source.generate_with_entities(entities, overrides)
+        return await self._send_and_record(state, event)
+
     async def _run_source(self, state: SourceState) -> None:
         state.start_time = time.monotonic()
         consecutive_errors = 0
@@ -130,47 +189,8 @@ class Engine:
                 break
             try:
                 event: LogEvent = await state.source.generate()
-                transport = self.get_transport(state.transport_name)
-                meta = SourceMeta(
-                    source_id=state.source.id,
-                    source_name=state.source.display_name,
-                    format=event.format,
-                    transport=state.transport_name,
-                    hostname=(
-                        event.structured.get("device")
-                        or event.structured.get("host")
-                        or ""
-                    ),
-                    facility=getattr(state.source, "syslog_facility", 1),
-                    severity=getattr(state.source, "syslog_severity", 6),
-                    dataset=getattr(state.source, "xsiam_dataset", "") or "",
-                    http_log_type=state.http_log_type,
-                    http_compression=state.http_compression,
-                    http_api_key=state.http_api_key,
-                )
-                result = await transport.send(event.raw, meta)
-
-                now_ts = datetime.now(timezone.utc).isoformat()
-                state.last_event_ts = now_ts
-
-                log_entry = {
-                    "source_id": state.source.id,
-                    "timestamp": now_ts,
-                    "transport": state.transport_name,
-                    "format": event.format,
-                    "raw": event.raw[:500],
-                    "success": result.success,
-                }
-
-                if result.success:
-                    state.total_sent += 1
-                    state.eps_window.increment()
-                else:
-                    state.total_errors += 1
-                    log_entry["error"] = result.error
-
+                await self._send_and_record(state, event)
                 consecutive_errors = 0
-                self._log_ring.append(log_entry)
 
             except asyncio.CancelledError:
                 raise
@@ -246,6 +266,7 @@ class Engine:
         return results
 
     async def close(self) -> None:
+        await self.scenarios.cancel_all()
         await self.stop_all()
         for transport in self._transports.values():
             await transport.close()

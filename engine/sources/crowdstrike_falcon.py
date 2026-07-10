@@ -5,7 +5,7 @@ import random
 import uuid
 from datetime import datetime, timezone
 
-from sources.base_source import LogEvent, LogSource, TransportName
+from sources.base_source import LogEvent, LogSource, ScenarioEntities, TransportName
 from utils.faker_helpers import (
     random_windows_host, random_linux_host, random_user,
     random_internal_ip, random_external_ip, random_port, random_sid,
@@ -37,12 +37,12 @@ _SEVERITIES = ["Low", "Medium", "High", "Critical"]
 _SEV_WEIGHTS = [20, 40, 30, 10]
 
 
-def _detection() -> dict:
+def _detection(host: str | None = None, user: str | None = None) -> dict:
     tactic = random.choice(_TACTICS)
     technique = random.choice(_TECHNIQUES[tactic])
     severity = random.choices(_SEVERITIES, weights=_SEV_WEIGHTS)[0]
-    host = random_windows_host()
-    user = random_user()
+    host = host or random_windows_host()
+    user = user or random_user()
     proc = random.choice(PROCESSES_WINDOWS)
 
     return {
@@ -69,9 +69,9 @@ def _detection() -> dict:
     }
 
 
-def _process_rollup2() -> dict:
-    host = random_windows_host()
-    user = random_user()
+def _process_rollup2(host: str | None = None, user: str | None = None) -> dict:
+    host = host or random_windows_host()
+    user = user or random_user()
     proc = random.choice(PROCESSES_WINDOWS)
     parent = random.choice(PROCESSES_WINDOWS)
     return {
@@ -92,8 +92,8 @@ def _process_rollup2() -> dict:
     }
 
 
-def _network_connect() -> dict:
-    host = random_windows_host()
+def _network_connect(host: str | None = None, user: str | None = None) -> dict:
+    host = host or random_windows_host()
     proc = random.choice(PROCESSES_WINDOWS)
     return {
         "EventType": "NetworkConnect",
@@ -109,10 +109,10 @@ def _network_connect() -> dict:
     }
 
 
-def _dns_request() -> dict:
+def _dns_request(host: str | None = None, user: str | None = None) -> dict:
     from faker import Faker
     f = Faker()
-    host = random_windows_host()
+    host = host or random_windows_host()
     proc = random.choice(PROCESSES_WINDOWS)
     return {
         "EventType": "DnsRequest",
@@ -125,9 +125,9 @@ def _dns_request() -> dict:
     }
 
 
-def _user_logon() -> dict:
-    host = random_windows_host()
-    user = random_user()
+def _user_logon(host: str | None = None, user: str | None = None) -> dict:
+    host = host or random_windows_host()
+    user = user or random_user()
     return {
         "EventType": "UserLogon",
         "ComputerName": host,
@@ -160,7 +160,17 @@ class CrowdStrikeFalconSource(LogSource):
 
     async def generate(self) -> LogEvent:
         event_type = random.choices(_EVENT_TYPES, weights=_TYPE_WEIGHTS)[0]
-        event = _GENERATORS[event_type]()
+        return self._build(event_type)
+
+    async def generate_with_entities(
+        self, entities: ScenarioEntities, overrides: dict | None = None
+    ) -> LogEvent:
+        overrides = overrides or {}
+        event_type = overrides.get("event_type") or random.choices(_EVENT_TYPES, weights=_TYPE_WEIGHTS)[0]
+        return self._build(event_type, host=entities.host, user=entities.username)
+
+    def _build(self, event_type: str, host: str | None = None, user: str | None = None) -> LogEvent:
+        event = _GENERATORS[event_type](host=host, user=user)
         event["timestamp"] = datetime.now(timezone.utc).isoformat()
         event["cid"] = uuid.uuid4().hex
         event["aid"] = uuid.uuid4().hex

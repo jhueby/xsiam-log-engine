@@ -167,11 +167,32 @@ Add it under **Settings → XDR Data Management → Parsers → New Parser** in 
 
 ---
 
+## Attack scenarios
+
+Timed, correlated event sequences across sources — a single resolved identity/host/IP fires a
+realistic multi-vendor story, so a correlation rule has something real to detect instead of
+unrelated per-source noise. Two are shipped (`engine/scenarios/definitions/*.yaml`):
+
+- **Phishing to Exfiltration** — Proofpoint click → Okta SSO sign-in → CrowdStrike detection → AWS CloudTrail `GetObject`.
+- **Insider Privilege Escalation** — Okta password change → AWS `CreateAccessKey`/`AttachUserPolicy` → CrowdStrike process activity.
+
+Four sources (`okta`, `crowdstrike_falcon`, `aws_cloudtrail`, `proofpoint_tap`) accept a shared
+`ScenarioEntities` (username/domain user/host/internal+external IP) and per-step `overrides`
+(e.g. force a specific `event_type`); every other source safely no-ops back to its normal
+`generate()` if ever referenced in a scenario step. Runs execute as background asyncio tasks with
+per-step delay + jitter timed from scenario start, independent of whether a source's own EPS loop
+is running, and share the same transport/stats/log-ring path as normal traffic. Add a scenario by
+dropping a new YAML file in `engine/scenarios/definitions/` — no code changes required unless it
+needs a source that doesn't yet accept entity overrides.
+
+---
+
 ## GUI
 
 - **Dashboard** — live aggregate stats (EPS, sent, errors, per-transport counts), transport health, Start/Stop All (Stop All is two-click to confirm), and first-run / circuit-breaker banners.
 - **Sources** — searchable, tag-filterable grid. Per card: enable toggle, log-scale EPS slider with numeric entry, transport selector, HTTP log-type/compression/API-key, and the copyable parsing rule.
 - **Correlation Rules** — engine-managed XSIAM correlation rules (`[LogSim]` prefix): tenant state, per-row remove, Remove All. Rules are pushed/removed per source from its card; the backend always lists tenant rules first, so an existing rule is never silently overwritten (explicit overwrite confirm) and removals of absent rules fail cleanly.
+- **Scenarios** — run a shipped attack scenario, watch each step transition pending → fired/error in real time, and cancel an in-flight run.
 - **Configuration** — XSIAM + BrokerVM settings, the XSIAM Public API credentials (with a staged **Test connection** probe), and the `.pfx` upload.
 - **Log Viewer** — live SSE tail with pause (buffers while paused), text search, success/error filter, raw/pretty toggle, and NDJSON download.
 - **Diagnostics** — engine log stream with Off / Errors / Informational levels; shows outgoing request previews and full transport error responses.
@@ -199,6 +220,11 @@ All routes are under `/api`. When `ENGINE_API_TOKEN` is set, send it as the `X-E
 | POST | `/api/correlations/{id}` | Push a source's rule (list-first; 409 unless `?overwrite=true`) |
 | DELETE | `/api/correlations/{id}` | Remove a source's rule (404 if absent on tenant) |
 | DELETE | `/api/correlations` | Remove all engine-managed (`[LogSim]`) rules |
+| GET | `/api/scenarios` | List available attack scenarios |
+| GET | `/api/scenarios/runs` | List scenario run history (bounded, newest first) |
+| GET | `/api/scenarios/runs/{run_id}` | Single run detail (per-step status) |
+| POST | `/api/scenarios/{id}/run` | Start a scenario run |
+| POST | `/api/scenarios/runs/{run_id}/cancel` | Cancel an in-flight run |
 | POST | `/api/certs/pfx` | Upload WEC client certificate (`.pfx` / PKCS#12) |
 | GET | `/api/stats` | Aggregate statistics |
 | GET | `/api/stats/sources` | Per-source statistics |
@@ -253,6 +279,7 @@ engine/
   sources/        one file per log source (auto-discovered)
   transports/     http, syslog, wec
   xsiam_api/      XSIAM public-API client + rule generation (correlation rules)
+  scenarios/      correlated multi-source attack scenarios (loader, runner, definitions/*.yaml)
   config/         settings (pydantic-settings), defaults.yaml
   utils/          rate limiter, diagnostics buffer, faker helpers, logger
 gui/

@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from api.routers import sources, config, stats, control, correlations, diagnostics, certs
+from api.routers import sources, config, stats, control, correlations, scenarios, diagnostics, certs
 from main import get_engine
 from utils.logger import get_logger
 from config.settings import settings
@@ -65,6 +65,7 @@ app.include_router(certs.router)
 app.include_router(stats.router)
 app.include_router(control.router)
 app.include_router(correlations.router)
+app.include_router(scenarios.router)
 app.include_router(diagnostics.router)
 
 

@@ -1,9 +1,10 @@
 import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom'
 import { useEffect, useState } from 'react'
-import { Activity, Settings, List, Eye, Terminal, GitBranch } from 'lucide-react'
+import { Activity, Settings, List, Eye, Terminal, GitBranch, Swords } from 'lucide-react'
 import Dashboard from './pages/Dashboard'
 import Configuration from './pages/Configuration'
 import CorrelationRules from './pages/CorrelationRules'
+import Scenarios from './pages/Scenarios'
 import Sources from './pages/Sources'
 import LogViewer from './pages/LogViewer'
 import Diagnostics from './pages/Diagnostics'
@@ -18,6 +19,7 @@ const nav = [
   { to: '/', label: 'Dashboard', icon: Activity },
   { to: '/sources', label: 'Sources', icon: List },
   { to: '/correlations', label: 'Correlation Rules', icon: GitBranch },
+  { to: '/scenarios', label: 'Scenarios', icon: Swords },
   { to: '/config', label: 'Configuration', icon: Settings },
   { to: '/logs', label: 'Log Viewer', icon: Eye },
   { to: '/diagnostics', label: 'Diagnostics', icon: Terminal },
@@ -94,6 +96,7 @@ export default function App() {
                 <Route path="/" element={<Dashboard />} />
                 <Route path="/sources" element={<Sources />} />
                 <Route path="/correlations" element={<CorrelationRules />} />
+                <Route path="/scenarios" element={<Scenarios />} />
                 <Route path="/config" element={<Configuration />} />
                 <Route path="/logs" element={<LogViewer />} />
                 <Route path="/diagnostics" element={<Diagnostics />} />

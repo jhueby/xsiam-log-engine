@@ -152,6 +152,55 @@ export const deleteCorrelationRule = (id: string) => api.delete(`/correlations/$
 export const deleteAllCorrelationRules = () => api.delete('/correlations')
 export const validateConfig = () => api.post<ConfigValidationResponse>('/config/validate')
 
+export interface ScenarioStepInfo {
+  source: string
+  delay: number
+  jitter: number
+  overrides: Record<string, unknown>
+}
+
+export interface ScenarioInfo {
+  id: string
+  name: string
+  description: string
+  steps: ScenarioStepInfo[]
+}
+
+export interface ScenarioEntitiesInfo {
+  username: string
+  domain_user: string
+  host: string
+  internal_ip: string
+  external_ip: string
+}
+
+export type ScenarioStepStatus = 'pending' | 'fired' | 'error'
+export type ScenarioRunStatus = 'running' | 'completed' | 'cancelled' | 'failed'
+
+export interface ScenarioStepStatusInfo extends ScenarioStepInfo {
+  index: number
+  status: ScenarioStepStatus
+  fired_at: string | null
+  error: string | null
+}
+
+export interface ScenarioRunInfo {
+  run_id: string
+  scenario_id: string
+  scenario_name: string
+  started_at: string
+  status: ScenarioRunStatus
+  error: string | null
+  entities: ScenarioEntitiesInfo
+  steps: ScenarioStepStatusInfo[]
+}
+
+export const getScenarios = () => api.get<ScenarioInfo[]>('/scenarios')
+export const getScenarioRuns = () => api.get<ScenarioRunInfo[]>('/scenarios/runs')
+export const getScenarioRun = (runId: string) => api.get<ScenarioRunInfo>(`/scenarios/runs/${runId}`)
+export const runScenario = (id: string) => api.post<ScenarioRunInfo>(`/scenarios/${id}/run`)
+export const cancelScenarioRun = (runId: string) => api.post<ScenarioRunInfo>(`/scenarios/runs/${runId}/cancel`)
+
 export const startAll = () => api.post('/control/start-all')
 export const stopAll = () => api.post('/control/stop-all')
 export const reloadConfig = () => api.post('/control/reload')

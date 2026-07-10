@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime, timezone
 from faker import Faker
 
-from sources.base_source import LogEvent, LogSource, TransportName
+from sources.base_source import LogEvent, LogSource, ScenarioEntities, TransportName
 from utils.faker_helpers import random_domain_user, random_external_ip, random_internal_ip, weighted_choice
 
 fake = Faker()
@@ -43,9 +43,26 @@ class OktaSource(LogSource):
 
     async def generate(self) -> LogEvent:
         event_type, _ = weighted_choice(_EVENT_TYPES, [w for _, w in _EVENT_TYPES])
-        user = random_domain_user()
-        outcome = random.choices(_OUTCOMES, weights=_OUT_WEIGHTS)[0]
-        ip = random.choice([random_external_ip(), random_internal_ip()])
+        return self._build(
+            event_type=event_type,
+            user=random_domain_user(),
+            outcome=random.choices(_OUTCOMES, weights=_OUT_WEIGHTS)[0],
+            ip=random.choice([random_external_ip(), random_internal_ip()]),
+        )
+
+    async def generate_with_entities(
+        self, entities: ScenarioEntities, overrides: dict | None = None
+    ) -> LogEvent:
+        overrides = overrides or {}
+        event_type = overrides.get("event_type") or weighted_choice(_EVENT_TYPES, [w for _, w in _EVENT_TYPES])[0]
+        return self._build(
+            event_type=event_type,
+            user=entities.domain_user,
+            outcome=overrides.get("outcome") or random.choices(_OUTCOMES, weights=_OUT_WEIGHTS)[0],
+            ip=overrides.get("ip") or entities.external_ip,
+        )
+
+    def _build(self, event_type: str, user: str, outcome: str, ip: str) -> LogEvent:
         now = datetime.now(timezone.utc)
         mfa_type = random.choice(_MFA_TYPES)
 
