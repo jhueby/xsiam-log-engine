@@ -34,6 +34,9 @@ def _state_to_info(sid: str) -> SourceInfo:
         http_api_key="***" if state.http_api_key else "",
         auto_disabled_reason=state.auto_disabled_reason,
         xsiam_dataset=getattr(src, "xsiam_dataset", "") or settings.xsiam_dataset,
+        cribl_emulation=state.cribl_emulation,
+        cribl_pipe_name=state.cribl_pipe_name,
+        cribl_host_name=state.cribl_host_name,
     )
 
 
@@ -88,6 +91,12 @@ async def patch_source_config(source_id: str, patch: SourceConfigPatch) -> Sourc
         state.http_compression = patch.http_compression
     if patch.http_api_key is not None and patch.http_api_key != "***":
         state.http_api_key = patch.http_api_key
+    if patch.cribl_emulation is not None:
+        state.cribl_emulation = patch.cribl_emulation
+    if patch.cribl_pipe_name is not None:
+        state.cribl_pipe_name = patch.cribl_pipe_name
+    if patch.cribl_host_name is not None:
+        state.cribl_host_name = patch.cribl_host_name
     if patch.enabled is not None:
         if patch.enabled and not state.enabled:
             await engine.start_source(source_id)

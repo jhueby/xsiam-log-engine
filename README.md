@@ -165,6 +165,10 @@ Expand a source's **HTTP settings** on its card to copy a ready-made ingest rule
 
 Add it under **Settings → XDR Data Management → Parsers → New Parser** in your XSIAM tenant.
 
+### Cribl Stream emulation
+
+Per source, opt-in, HTTP transport only (toggle in **HTTP settings** on the source card). Stamps events with Cribl Stream-style metadata — `cribl_pipe`, `cribl_host`, `cribl_breaker`, `_time`, `source`, `sourcetype` — as if the event had been routed through a Cribl worker before reaching XSIAM, without an actual Cribl instance anywhere. Off by default; off is a no-op (byte-identical output to a source with the toggle never touched).
+
 ---
 
 ## Attack scenarios

@@ -18,6 +18,9 @@ class SourceMeta:
     http_log_type: str = "raw"      # raw | json | cef | leef
     http_compression: str = "none"  # none | gzip
     http_api_key: str = ""          # empty = use global settings.xsiam_api_key
+    cribl_emulation: bool = False   # stamp Cribl Stream-style metadata onto events
+    cribl_pipe_name: str = ""       # empty = "default"
+    cribl_host_name: str = ""       # empty = "cribl-worker.corp.local"
 
 
 @dataclass

@@ -91,6 +91,33 @@ async def test_patch_source_eps(client):
 
 
 @pytest.mark.asyncio
+async def test_patch_source_cribl_emulation(client):
+    resp = await client.patch(
+        "/api/sources/okta/config",
+        json={"cribl_emulation": True, "cribl_pipe_name": "prod_pipe", "cribl_host_name": "cribl-07"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["cribl_emulation"] is True
+    assert data["cribl_pipe_name"] == "prod_pipe"
+    assert data["cribl_host_name"] == "cribl-07"
+
+    # toggling off is independently settable, doesn't require clearing pipe/host
+    resp = await client.patch("/api/sources/okta/config", json={"cribl_emulation": False})
+    assert resp.json()["cribl_emulation"] is False
+    assert resp.json()["cribl_pipe_name"] == "prod_pipe"  # preserved, not reset
+
+
+@pytest.mark.asyncio
+async def test_source_info_defaults_cribl_emulation_off(client):
+    resp = await client.get("/api/sources/crowdstrike_falcon")
+    data = resp.json()
+    assert data["cribl_emulation"] is False
+    assert data["cribl_pipe_name"] == ""
+    assert data["cribl_host_name"] == ""
+
+
+@pytest.mark.asyncio
 async def test_start_stop_source(client):
     start_resp = await client.post("/api/sources/okta/start")
     assert start_resp.status_code == 200

@@ -50,6 +50,11 @@ class SourceState:
         self.http_compression: str = "none"
         self.http_api_key: str = ""
 
+        # Cribl Stream metadata emulation (opt-in, default off)
+        self.cribl_emulation: bool = False
+        self.cribl_pipe_name: str = ""
+        self.cribl_host_name: str = ""
+
         # Circuit-breaker reason; set when auto-disabled, cleared on manual start
         self.auto_disabled_reason: str | None = None
 
@@ -145,6 +150,9 @@ class Engine:
             http_log_type=state.http_log_type,
             http_compression=state.http_compression,
             http_api_key=state.http_api_key,
+            cribl_emulation=state.cribl_emulation,
+            cribl_pipe_name=state.cribl_pipe_name,
+            cribl_host_name=state.cribl_host_name,
         )
         result = await transport.send(event.raw, meta)
 

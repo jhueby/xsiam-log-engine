@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import gzip
 import json
+from datetime import datetime, timezone
 from typing import Any
 
 import httpx
@@ -24,31 +25,58 @@ _LOG_TYPE_CONTENT_TYPE = {
 }
 
 
-def _build_body(payload: str, log_type: str, source_id: str) -> bytes:
+def _cribl_fields(meta: SourceMeta) -> dict[str, Any]:
+    """Cribl Stream-style metadata to stamp onto an event, as if it had been
+    routed through a Cribl worker before reaching XSIAM. Empty (no-op) unless
+    the source has opted in via meta.cribl_emulation."""
+    if not meta.cribl_emulation:
+        return {}
+    pipe = meta.cribl_pipe_name or "default"
+    host = meta.cribl_host_name or "cribl-worker.corp.local"
+    return {
+        "cribl_pipe": pipe,
+        "cribl_host": host,
+        "cribl_breaker": "auto_line_breaker",
+        "_time": datetime.now(timezone.utc).timestamp(),
+        "source": f"cribl:{pipe}:{meta.source_id}",
+        "sourcetype": meta.source_id,
+    }
+
+
+def _augment_json_event(event: dict, meta: SourceMeta) -> dict:
+    return {"simulated_log_source": meta.source_id, **_cribl_fields(meta), **event}
+
+
+def _augment_raw_line(line: str, meta: SourceMeta) -> str:
+    prefix = "".join(f'{k}="{v}" ' for k, v in _cribl_fields(meta).items())
+    return f'{prefix}simulated_log_source="{meta.source_id}" {line}'
+
+
+def _build_body(payload: str, meta: SourceMeta) -> bytes:
     stripped = payload.rstrip("\n")
 
-    if log_type == "json":
+    if meta.http_log_type == "json":
         try:
             event = json.loads(stripped)
         except json.JSONDecodeError:
             event = {"raw": stripped}
         if isinstance(event, dict):
-            event = {"simulated_log_source": source_id, **event}
+            event = _augment_json_event(event, meta)
         return (json.dumps(event) + "\n").encode("utf-8")
 
     # raw / cef / leef
-    # If the payload is already a JSON object, inject simulated_log_source as
-    # a field so the JSON structure stays valid (XSIAM auto-detects JSON and
-    # rejects a bare key=value prefix in front of a JSON body).
+    # If the payload is already a JSON object, inject fields rather than
+    # prefixing them so the JSON structure stays valid (XSIAM auto-detects
+    # JSON and rejects a bare key=value prefix in front of a JSON body).
     try:
         event = json.loads(stripped)
         if isinstance(event, dict):
-            event = {"simulated_log_source": source_id, **event}
+            event = _augment_json_event(event, meta)
             return (json.dumps(event) + "\n").encode("utf-8")
     except (json.JSONDecodeError, ValueError):
         pass
-    # Plain-text log (CEF, LEEF, syslog-style): prefix with key=value pair
-    return f'simulated_log_source="{source_id}" {stripped}\n'.encode("utf-8")
+    # Plain-text log (CEF, LEEF, syslog-style): prefix with key=value pairs
+    return (_augment_raw_line(stripped, meta) + "\n").encode("utf-8")
 
 
 class HTTPTransport(Transport):
@@ -72,7 +100,7 @@ class HTTPTransport(Transport):
         return headers
 
     async def send(self, payload: str, source_meta: SourceMeta) -> SendResult:
-        body = _build_body(payload, source_meta.http_log_type, source_meta.source_id)
+        body = _build_body(payload, source_meta)
         if source_meta.http_compression == "gzip":
             encoded = gzip.compress(body)
         else:
@@ -131,16 +159,16 @@ class HTTPTransport(Transport):
         return SendResult(success=False, error="Max retries exceeded")
 
     async def send_batch(self, events: list[dict[str, Any]], source_meta: SourceMeta) -> SendResult:
-        sid = source_meta.source_id
         if source_meta.http_log_type == "json":
             augmented = [
-                {"simulated_log_source": sid, **e} if isinstance(e, dict) else {"simulated_log_source": sid, "raw": str(e)}
+                _augment_json_event(e, source_meta) if isinstance(e, dict)
+                else _augment_json_event({"raw": str(e)}, source_meta)
                 for e in events
             ]
             body = json.dumps(augmented).encode("utf-8")
         else:
             body = "\n".join(
-                f'simulated_log_source="{sid}" {e.get("raw", json.dumps(e)) if isinstance(e, dict) else str(e)}'
+                _augment_raw_line(e.get("raw", json.dumps(e)) if isinstance(e, dict) else str(e), source_meta)
                 for e in events
             ).encode("utf-8") + b"\n"
 

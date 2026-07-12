@@ -248,6 +248,9 @@ function HttpSettings({ source, onUpdate }: { source: SourceInfo; onUpdate: () =
   const [logType, setLogType] = useState<HttpLogType>(source.http_log_type)
   const [compression, setCompression] = useState<HttpCompression>(source.http_compression)
   const [apiKey, setApiKey] = useState('')
+  const [criblEmulation, setCriblEmulation] = useState(source.cribl_emulation)
+  const [criblPipeName, setCriblPipeName] = useState(source.cribl_pipe_name)
+  const [criblHostName, setCriblHostName] = useState(source.cribl_host_name)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const { show } = useToast()
@@ -256,7 +259,13 @@ function HttpSettings({ source, onUpdate }: { source: SourceInfo; onUpdate: () =
     setSaving(true)
     setSaved(false)
     try {
-      const patch: Record<string, string> = { http_log_type: logType, http_compression: compression }
+      const patch: Record<string, string | boolean> = {
+        http_log_type: logType,
+        http_compression: compression,
+        cribl_emulation: criblEmulation,
+        cribl_pipe_name: criblPipeName,
+        cribl_host_name: criblHostName,
+      }
       if (apiKey) patch.http_api_key = apiKey
       await patchSource(source.id, patch as any)
       setSaved(true)
@@ -310,6 +319,42 @@ function HttpSettings({ source, onUpdate }: { source: SourceInfo; onUpdate: () =
           className="w-full bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-2 py-1 text-xs focus:outline-none focus:border-indigo-500"
         />
       </div>
+
+      <div className="border-t border-gray-100 dark:border-gray-800 pt-2 space-y-2">
+        <label className="flex items-center gap-2 text-xs text-gray-600 dark:text-gray-400 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={criblEmulation}
+            onChange={e => setCriblEmulation(e.target.checked)}
+          />
+          Simulate Cribl Stream collector metadata
+        </label>
+        {criblEmulation && (
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Cribl pipe</label>
+              <input
+                type="text"
+                value={criblPipeName}
+                onChange={e => setCriblPipeName(e.target.value)}
+                placeholder="default"
+                className="w-full bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-2 py-1 text-xs focus:outline-none focus:border-indigo-500"
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Cribl worker host</label>
+              <input
+                type="text"
+                value={criblHostName}
+                onChange={e => setCriblHostName(e.target.value)}
+                placeholder="cribl-worker.corp.local"
+                className="w-full bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-2 py-1 text-xs focus:outline-none focus:border-indigo-500"
+              />
+            </div>
+          </div>
+        )}
+      </div>
+
       <div className="flex items-center gap-2">
         <button
           onClick={apply}
