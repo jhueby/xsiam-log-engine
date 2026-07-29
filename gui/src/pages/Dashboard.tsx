@@ -61,10 +61,7 @@ export default function Dashboard() {
 
   const autoDisabled = sources.filter(s => s.auto_disabled_reason)
 
-  const isFirstRun = config && (
-    !config.xsiam_api_key || config.xsiam_api_key === 'changeme' ||
-    config.xsiam_url.includes('YOUR-TENANT')
-  )
+  const isFirstRun = config != null && !config.xsiam_configured
 
   return (
     <div className="flex flex-col h-full">

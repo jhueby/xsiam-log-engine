@@ -46,8 +46,14 @@ def pfx_bytes(tmp_path):
 
 @pytest.fixture(autouse=True)
 def isolated_certs_dir(tmp_path, monkeypatch):
-    """Redirect the endpoint's cert output dir so tests don't touch the repo."""
+    """Redirect the endpoint's cert output dir *and* the .env file it writes
+    TLS_CLIENT_CERT_PATH/TLS_CLIENT_KEY_PATH into, so tests don't touch the
+    repo's real engine/config/.env -- a prior version of this fixture only
+    redirected _CERTS_DIR, so every run of the upload test left stale paths
+    (pointing at an already-deleted tmp_path) in the real .env, breaking any
+    later test/dev session that reads settings.tls_client_cert_path."""
     monkeypatch.setattr(certs_module, "_CERTS_DIR", tmp_path / "certs")
+    monkeypatch.setattr(certs_module, "_ENV_FILE", tmp_path / ".env")
     yield
 
 

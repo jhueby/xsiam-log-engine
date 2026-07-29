@@ -1,5 +1,7 @@
 """Tests for WECTransport: SOAP envelope, XML escaping, subscription URL parsing, HTTP handling."""
 import json
+import ssl
+import subprocess
 import sys
 import os
 import xml.etree.ElementTree as ET
@@ -12,7 +14,7 @@ import respx
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'engine'))
 
-from transports.wec_transport import WECTransport, _build_event_xml, _parse_subscription_url
+from transports.wec_transport import WECTransport, _build_event_xml, _build_ssl_context, _parse_subscription_url
 from transports.base import SourceMeta
 
 _META = SourceMeta(
@@ -35,6 +37,7 @@ def _patch_settings():
         s.brokervm_wec_port = 5986
         s.tls_client_cert_path = ""
         s.tls_client_key_path = ""
+        s.tls_ca_cert_path = ""
         yield s
 
 
@@ -236,3 +239,34 @@ async def test_envelope_contains_wsman_namespace():
     assert b"soap-envelope" in captured_body[0]
     assert b"<s:Body>" in captured_body[0] or b"Body>" in captured_body[0]
     await transport.close()
+
+
+# ── server-cert verification opt-in ───────────────────────────────────────────
+
+def test_build_ssl_context_default_trusts_server_with_no_verification():
+    with patch("transports.wec_transport.settings") as s:
+        s.tls_ca_cert_path = ""
+        s.tls_client_cert_path = ""
+        s.tls_client_key_path = ""
+        ctx = _build_ssl_context()
+    assert ctx.verify_mode == ssl.CERT_NONE
+    assert ctx.check_hostname is False
+
+
+def test_build_ssl_context_verifies_against_ca_bundle_when_configured(tmp_path):
+    ca_path = tmp_path / "ca.pem"
+    subprocess.run(
+        ["openssl", "req", "-x509", "-newkey", "rsa:2048", "-keyout", str(tmp_path / "ca.key"),
+         "-out", str(ca_path), "-days", "1", "-nodes", "-subj", "/CN=test-ca"],
+        check=True, capture_output=True,
+    )
+    with patch("transports.wec_transport.settings") as s:
+        s.tls_ca_cert_path = str(ca_path)
+        s.tls_client_cert_path = ""
+        s.tls_client_key_path = ""
+        ctx = _build_ssl_context()
+    # ssl.SSLContext(PROTOCOL_TLS_CLIENT) defaults to CERT_REQUIRED/hostname
+    # checking on; the opt-in path must leave those defaults alone rather
+    # than disabling them the way the no-CA branch does.
+    assert ctx.verify_mode == ssl.CERT_REQUIRED
+    assert ctx.check_hostname is True

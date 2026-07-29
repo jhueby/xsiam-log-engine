@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { AlertTriangle, RefreshCw, Trash2 } from 'lucide-react'
 import {
@@ -22,13 +22,22 @@ export default function CorrelationRules() {
   const [busy, setBusy] = useState(false)
   const [confirmRemoveAll, setConfirmRemoveAll] = useState(false)
   const { show } = useToast()
+  // Guards against a slower, older request (e.g. showAll=true) resolving
+  // after a faster, newer one (showAll=false fired by a quick re-toggle or
+  // the Refresh button) and overwriting it with stale data.
+  const requestIdRef = useRef(0)
 
   const load = (all = showAll) => {
+    const requestId = ++requestIdRef.current
     setLoading(true)
     setError(null)
     getCorrelationRules(all)
-      .then(r => setRules(r.data))
+      .then(r => {
+        if (requestId !== requestIdRef.current) return
+        setRules(r.data)
+      })
       .catch(err => {
+        if (requestId !== requestIdRef.current) return
         const detail = err?.response?.data?.detail
         setError({
           status: err?.response?.status ?? 0,
@@ -36,7 +45,9 @@ export default function CorrelationRules() {
         })
         setRules(null)
       })
-      .finally(() => setLoading(false))
+      .finally(() => {
+        if (requestId === requestIdRef.current) setLoading(false)
+      })
   }
 
   useEffect(() => { load() }, [showAll])

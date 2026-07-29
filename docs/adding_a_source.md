@@ -57,14 +57,43 @@ The GUI will immediately show the new source card on the Dashboard.
 
 ## Available Helpers
 
-| Helper | Location | Purpose |
-|--------|----------|---------|
-| `random_internal_ip()` | `utils/faker_helpers.py` | Realistic RFC-1918 IP |
-| `random_external_ip()` | `utils/faker_helpers.py` | Random public IP |
-| `random_windows_host()` | `utils/faker_helpers.py` | WIN-XXXXXX hostname |
-| `random_linux_host()` | `utils/faker_helpers.py` | web01.corp.local etc |
-| `random_user()` | `utils/faker_helpers.py` | Domain username |
-| `weighted_choice(items, weights)` | `utils/faker_helpers.py` | Weighted random selection |
+All in `utils/faker_helpers.py`:
+
+| Helper | Purpose |
+|--------|---------|
+| `random_internal_ip()` | Realistic RFC-1918 IP |
+| `random_external_ip()` | Random public IP |
+| `random_windows_host()` | WIN-XXXXXX hostname |
+| `random_linux_host()` | web01.corp.local etc |
+| `random_network_device()` | Router/switch/firewall-style hostname |
+| `random_user(include_service=False)` | Domain username; set `include_service=True` to include service accounts |
+| `random_domain_user()` | Fully-qualified `user@domain` string |
+| `random_process_windows()` | Realistic Windows process name |
+| `random_process_linux()` | Realistic Linux process name |
+| `random_port()` | Random ephemeral port (1024-65535) |
+| `random_well_known_port()` | Random port from a common services list (80, 443, 22, …) |
+| `random_sid(rid=None)` | Windows SID string, shared domain prefix per engine run |
+| `weighted_choice(items, weights)` | Weighted random selection |
+
+## Scenario Support (optional)
+
+A source works standalone with no extra code. To make it usable as a step in an [attack scenario](../README.md#attack-scenarios) — so its events can share a `ScenarioEntities` identity/host with other sources in a correlated story — override `generate_with_entities`:
+
+```python
+from sources.base_source import LogEvent, LogSource, ScenarioEntities
+
+class MyNewSource(LogSource):
+    ...
+    async def generate_with_entities(
+        self, entities: ScenarioEntities, overrides: dict | None = None
+    ) -> LogEvent:
+        overrides = overrides or {}
+        # build the event using entities.username / entities.host / entities.internal_ip / etc.,
+        # and overrides.get("event_type", <your default>) for any per-step forced field
+        ...
+```
+
+The base class's default implementation just calls `generate()`, so a source that skips this is still safe to reference in a scenario step — it produces normal, uncorrelated output instead of erroring.
 
 ## Transport Format Reference
 

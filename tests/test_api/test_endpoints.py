@@ -7,12 +7,23 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'engine')
 
 from httpx import AsyncClient, ASGITransport
 from api.app import app
+from api.routers import config as config_module
 
 
 @pytest.fixture
 async def client():
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
         yield c
+
+
+@pytest.fixture(autouse=True)
+def isolated_env_file(tmp_path, monkeypatch):
+    """PUT /api/config persists to disk via dotenv.set_key -- redirect it off
+    the repo's real engine/config/.env so running this test doesn't leave
+    stale settings (e.g. xsiam_dataset='test_dataset') in a file later test
+    runs and local dev sessions actually load."""
+    monkeypatch.setattr(config_module, "_ENV_FILE", tmp_path / ".env")
+    yield
 
 
 @pytest.mark.asyncio
@@ -70,6 +81,24 @@ async def test_update_config(client):
     assert resp.status_code == 200
     data = resp.json()
     assert data["xsiam_dataset"] == "test_dataset"
+
+
+@pytest.mark.asyncio
+async def test_xsiam_configured_reflects_api_key_state(client):
+    """Regression: xsiam_configured must go false->true based on whether the
+    real api key is still the 'changeme' default -- unlike xsiam_api_key
+    itself, which is masked to '***' either way and can't be used for this."""
+    from config.settings import settings
+    original_key = settings.xsiam_api_key
+    try:
+        settings.xsiam_api_key = "changeme"
+        resp = await client.get("/api/config")
+        assert resp.json()["xsiam_configured"] is False
+
+        resp = await client.put("/api/config", json={"xsiam_api_key": "a-real-key"})
+        assert resp.json()["xsiam_configured"] is True
+    finally:
+        settings.xsiam_api_key = original_key
 
 
 @pytest.mark.asyncio

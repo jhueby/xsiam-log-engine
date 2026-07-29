@@ -65,6 +65,7 @@ export interface StatsResponse {
 export interface TransportConfig {
   xsiam_url: string
   xsiam_api_key: string   // masked as '***' on GET
+  xsiam_configured: boolean  // server-computed: false while xsiam_api_key is still the 'changeme' default
   xsiam_dataset: string
   xsiam_api_url: string
   xsiam_api_key_id: string

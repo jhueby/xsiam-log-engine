@@ -19,11 +19,13 @@ Use it to exercise XSIAM/XDR ingestion, validate parsing rules, demo dashboards,
 - [Configuration](#configuration)
 - [WEC setup](#wec-setup)
 - [XSIAM parsing rules](#xsiam-parsing-rules)
+- [Attack scenarios](#attack-scenarios)
 - [GUI](#gui)
 - [API reference](#api-reference)
 - [Security](#security)
 - [Development](#development)
 - [Project layout](#project-layout)
+- [Extending](#extending)
 
 ---
 
@@ -126,6 +128,7 @@ All settings load from `.env` (see [`.env.example`](.env.example)). They can als
 | `WEC_SUBSCRIPTION_URL` | Full WEF subscription manager string (sets WEC host + port) | — |
 | `TLS_CLIENT_CERT_PATH` | WEC/syslog client cert — set automatically by `.pfx` upload | — |
 | `TLS_CLIENT_KEY_PATH` | WEC/syslog client key — set automatically by `.pfx` upload | — |
+| `TLS_CA_CERT_PATH` | CA bundle to verify the BrokerVM's server cert (WEC/syslog-TLS). Unset trusts it with no verification — see [Security](#security) | — |
 | `ENGINE_API_PORT` | Engine listen port | `8080` |
 | `ENGINE_DEFAULT_EPS` | Global default events/sec for new sources | `10` |
 | `ENGINE_LOG_LEVEL` | `DEBUG` / `INFO` / `WARNING` / `ERROR` | `INFO` |
@@ -255,13 +258,14 @@ This is a lab/testing tool; defaults assume it runs on a trusted network. Curren
 - **nginx headers** — `X-Frame-Options: DENY`, `X-Content-Type-Options: nosniff`, `Referrer-Policy: no-referrer`, and a restrictive `Content-Security-Policy`.
 - **Secrets** — the API key is masked on `GET /api/config` and never logged; request/response previews in diagnostics exclude auth headers.
 - **WEC certificate handling** — the `.pfx` upload is capped at 256 KiB (checked against bytes actually read, not the declared `Content-Length`); the extracted key, cert, and the `certs/` directory itself are written `0600`/`0700`; and the openssl passphrase is passed over the child process's stdin (`-passin fd:0`), never as a `pass:...` argv value another local user could read off `ps`.
+- **Server-cert verification (WEC/syslog-TLS)** — off by default (`TLS_CA_CERT_PATH` unset), since this engine talks to a self-signed lab BrokerVM with no distributed CA; set `TLS_CA_CERT_PATH` to a CA bundle to turn on real hostname + chain verification of the BrokerVM's server certificate.
 
 ---
 
 ## Development
 
 ```bash
-# Tests (103 passing: sources, transports HTTP/Syslog/WEC, API)
+# Tests (188 passing: sources, transports HTTP/Syslog/WEC, API, scenarios, engine)
 pip install -r engine/requirements.txt
 pytest tests/ -q
 pytest tests/ --cov=engine --cov-report=term-missing   # with coverage
@@ -279,7 +283,7 @@ cd gui && npm install && npm run dev
 
 ```
 engine/
-  api/            FastAPI app, routers (sources, config, stats, control, diagnostics, certs), models
+  api/            FastAPI app, routers (sources, config, stats, control, diagnostics, certs, correlations, scenarios), models
   sources/        one file per log source (auto-discovered)
   transports/     http, syslog, wec
   xsiam_api/      XSIAM public-API client + rule generation (correlation rules)
@@ -288,11 +292,11 @@ engine/
   utils/          rate limiter, diagnostics buffer, faker helpers, logger
 gui/
   src/
-    pages/        Dashboard, Sources, Configuration, LogViewer, Diagnostics
-    components/   SourceCard, StatsBar, LogViewer, Toast, ThemeToggle, …
+    pages/        Dashboard, Sources, CorrelationRules, Scenarios, Configuration, LogViewer, Diagnostics
+    components/   SourceCard, SourceGrid, StatsBar, LogViewer, ConfigPanel, ErrorBoundary, Toast, ThemeToggle, …
     hooks/        useSSE, useToast
     theme.ts      5-theme palette definitions + applyTheme()
-tests/            sources, transports, API
+tests/            sources, transports, API, scenarios, engine
 docs/             adding_a_source.md, architecture.md, brokervm_setup.md
 ```
 

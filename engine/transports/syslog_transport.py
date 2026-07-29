@@ -60,23 +60,29 @@ class SyslogTransport(Transport):
         self._connected_port: int | None = None
 
     async def _ensure_udp(self) -> asyncio.DatagramTransport:
-        host = settings.brokervm_host
-        port = settings.brokervm_syslog_port
-        if (self._udp_transport is None or self._udp_transport.is_closing()
-                or self._connected_host != host or self._connected_port != port):
-            if self._udp_transport and not self._udp_transport.is_closing():
-                self._udp_transport.close()
-            loop = asyncio.get_event_loop()
-            protocol = UDPSyslogProtocol()
-            transport, _ = await loop.create_datagram_endpoint(
-                lambda: protocol,
-                remote_addr=(host, port),
-                family=socket.AF_INET,
-            )
-            self._udp_transport = transport
-            self._connected_host = host
-            self._connected_port = port
-        return self._udp_transport
+        # Shared _connect_lock (same one _ensure_tcp uses) — without it, two
+        # sources racing in here after a shared reconnect (send()'s except
+        # clause resets state for both UDP and TCP together) can each create
+        # a datagram socket; only the last-assigned one is ever closed, so
+        # the loser leaks a file descriptor.
+        async with self._connect_lock:
+            host = settings.brokervm_host
+            port = settings.brokervm_syslog_port
+            if (self._udp_transport is None or self._udp_transport.is_closing()
+                    or self._connected_host != host or self._connected_port != port):
+                if self._udp_transport and not self._udp_transport.is_closing():
+                    self._udp_transport.close()
+                loop = asyncio.get_event_loop()
+                protocol = UDPSyslogProtocol()
+                transport, _ = await loop.create_datagram_endpoint(
+                    lambda: protocol,
+                    remote_addr=(host, port),
+                    family=socket.AF_INET,
+                )
+                self._udp_transport = transport
+                self._connected_host = host
+                self._connected_port = port
+            return self._udp_transport
 
     async def _ensure_tcp(self) -> asyncio.StreamWriter:
         async with self._connect_lock:
@@ -88,9 +94,14 @@ class SyslogTransport(Transport):
                 if self._tcp_writer and not self._tcp_writer.is_closing():
                     self._tcp_writer.close()
                 if proto == "tls":
-                    ctx = ssl.create_default_context()
-                    ctx.check_hostname = False
-                    ctx.verify_mode = ssl.CERT_NONE
+                    if settings.tls_ca_cert_path:
+                        # Opt-in: verify the BrokerVM's server cert against
+                        # the given CA bundle instead of trusting it blindly.
+                        ctx = ssl.create_default_context(cafile=settings.tls_ca_cert_path)
+                    else:
+                        ctx = ssl.create_default_context()
+                        ctx.check_hostname = False
+                        ctx.verify_mode = ssl.CERT_NONE
                     cert = settings.tls_client_cert_path
                     key = settings.tls_client_key_path
                     if cert and key:

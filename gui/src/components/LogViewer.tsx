@@ -1,6 +1,7 @@
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { Copy, Check, Pause, Play, Download, Search, WifiOff } from 'lucide-react'
 import { useSSE } from '../hooks/useSSE'
+import { useToast } from '../hooks/useToast'
 
 interface LogEntry {
   source_id: string
@@ -26,8 +27,10 @@ export default function LogViewerComponent({ filterSource }: Props) {
   const [search, setSearch] = useState('')
   const [filter, setFilter] = useState<Filter>('all')
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null)
+  const [bufferedCount, setBufferedCount] = useState(0)
   const bottomRef = useRef<HTMLDivElement>(null)
   const pauseBuffer = useRef<LogEntry[]>([])
+  const { show } = useToast()
 
   const path = filterSource
     ? `/api/logs/stream?source_id=${encodeURIComponent(filterSource)}`
@@ -38,6 +41,10 @@ export default function LogViewerComponent({ filterSource }: Props) {
       const entry = JSON.parse(data) as LogEntry
       if (paused) {
         pauseBuffer.current.push(entry)
+        // pauseBuffer is a ref (avoids re-rendering the log list itself for
+        // every buffered entry), but the "N buffered" indicator does need a
+        // state update to actually reflect the growing count while paused.
+        setBufferedCount(pauseBuffer.current.length)
         return
       }
       setLogs(prev => {
@@ -53,6 +60,7 @@ export default function LogViewerComponent({ filterSource }: Props) {
       // Flush buffer
       setLogs(prev => [...prev, ...pauseBuffer.current].slice(-500))
       pauseBuffer.current = []
+      setBufferedCount(0)
     }
     setPaused(v => !v)
   }
@@ -79,10 +87,14 @@ export default function LogViewerComponent({ filterSource }: Props) {
     URL.revokeObjectURL(url)
   }
 
-  const copy = (idx: number, text: string) => {
-    navigator.clipboard.writeText(text)
-    setCopiedIdx(idx)
-    setTimeout(() => setCopiedIdx(null), 2000)
+  const copy = async (idx: number, text: string) => {
+    try {
+      await navigator.clipboard.writeText(text)
+      setCopiedIdx(idx)
+      setTimeout(() => setCopiedIdx(null), 2000)
+    } catch {
+      show('Failed to copy — clipboard access was denied', 'error')
+    }
   }
 
   const formatEntry = (raw: string): string => {
@@ -145,7 +157,7 @@ export default function LogViewerComponent({ filterSource }: Props) {
           )}
           {paused && (
             <span className="text-xs text-orange-600 dark:text-orange-400 font-medium">
-              {pauseBuffer.current.length} buffered
+              {bufferedCount} buffered
             </span>
           )}
           <button

@@ -1,5 +1,7 @@
 """Tests for SyslogTransport: framing helpers, pre-framed passthrough, UDP/TCP send paths."""
 import asyncio
+import ssl
+import subprocess
 import sys
 import os
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -173,3 +175,67 @@ async def test_tcp_reconnects_after_closed_writer():
 
     assert result.success
     assert len(good_written) == 1
+
+
+# ── TLS server-cert verification opt-in ────────────────────────────────────────
+
+@pytest.mark.asyncio
+async def test_tls_send_trusts_server_with_no_verification_by_default():
+    transport = SyslogTransport()
+    captured_ctx: list[ssl.SSLContext] = []
+
+    async def fake_open_connection(host, port, ssl=None):
+        captured_ctx.append(ssl)
+        writer = MagicMock()
+        writer.is_closing.return_value = False
+        writer.write = lambda data: None
+        writer.drain = AsyncMock()
+        return MagicMock(), writer
+
+    with patch("transports.syslog_transport.settings") as s:
+        s.brokervm_host = "127.0.0.1"
+        s.brokervm_syslog_port = 6514
+        s.brokervm_syslog_proto = "tls"
+        s.tls_ca_cert_path = ""
+        s.tls_client_cert_path = ""
+        s.tls_client_key_path = ""
+        with patch("transports.syslog_transport.asyncio.open_connection", side_effect=fake_open_connection):
+            result = await transport.send("tls test message", _META_RAW)
+
+    assert result.success
+    assert captured_ctx[0].verify_mode == ssl.CERT_NONE
+    assert captured_ctx[0].check_hostname is False
+
+
+@pytest.mark.asyncio
+async def test_tls_send_verifies_against_ca_bundle_when_configured(tmp_path):
+    ca_path = tmp_path / "ca.pem"
+    subprocess.run(
+        ["openssl", "req", "-x509", "-newkey", "rsa:2048", "-keyout", str(tmp_path / "ca.key"),
+         "-out", str(ca_path), "-days", "1", "-nodes", "-subj", "/CN=test-ca"],
+        check=True, capture_output=True,
+    )
+    transport = SyslogTransport()
+    captured_ctx: list[ssl.SSLContext] = []
+
+    async def fake_open_connection(host, port, ssl=None):
+        captured_ctx.append(ssl)
+        writer = MagicMock()
+        writer.is_closing.return_value = False
+        writer.write = lambda data: None
+        writer.drain = AsyncMock()
+        return MagicMock(), writer
+
+    with patch("transports.syslog_transport.settings") as s:
+        s.brokervm_host = "127.0.0.1"
+        s.brokervm_syslog_port = 6514
+        s.brokervm_syslog_proto = "tls"
+        s.tls_ca_cert_path = str(ca_path)
+        s.tls_client_cert_path = ""
+        s.tls_client_key_path = ""
+        with patch("transports.syslog_transport.asyncio.open_connection", side_effect=fake_open_connection):
+            result = await transport.send("tls test message", _META_RAW)
+
+    assert result.success
+    assert captured_ctx[0].verify_mode == ssl.CERT_REQUIRED
+    assert captured_ctx[0].check_hostname is True

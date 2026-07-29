@@ -43,6 +43,11 @@ class SourceConfigPatch(BaseModel):
 class TransportConfig(BaseModel):
     xsiam_url: str
     xsiam_api_key: str
+    # Server-computed: true once xsiam_api_key is set to something other than
+    # the "changeme" default. Needed because xsiam_api_key itself is masked
+    # to "***" below whenever truthy -- including the untouched default -- so
+    # a client can never infer "still unconfigured" from that field alone.
+    xsiam_configured: bool
     xsiam_dataset: str
     xsiam_api_url: str
     xsiam_api_key_id: str

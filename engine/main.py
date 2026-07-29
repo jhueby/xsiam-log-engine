@@ -41,6 +41,11 @@ class SourceState:
         # Stats
         self.total_sent = 0
         self.total_errors = 0
+        # Sent count per transport *actually used at send time* — kept
+        # separate from transport_name (the source's current config) so
+        # switching a source's transport doesn't retroactively misattribute
+        # everything it already sent under the old transport.
+        self.sent_by_transport: dict[str, int] = {"http": 0, "syslog": 0, "wec": 0}
         self.last_event_ts: str | None = None
         self.start_time: float | None = None
         self.eps_window = SlidingWindowCounter()
@@ -171,6 +176,9 @@ class Engine:
         if result.success:
             state.total_sent += 1
             state.eps_window.increment()
+            state.sent_by_transport[state.transport_name] = (
+                state.sent_by_transport.get(state.transport_name, 0) + 1
+            )
         else:
             state.total_errors += 1
             log_entry["error"] = result.error
@@ -192,10 +200,10 @@ class Engine:
         state.start_time = time.monotonic()
         consecutive_errors = 0
         while not state._stop_event.is_set():
-            await state.bucket.acquire()
-            if state._stop_event.is_set():
-                break
             try:
+                await state.bucket.acquire()
+                if state._stop_event.is_set():
+                    break
                 event: LogEvent = await state.source.generate()
                 await self._send_and_record(state, event)
                 consecutive_errors = 0
@@ -229,13 +237,14 @@ class Engine:
     def get_stats(self) -> dict:
         total_sent = sum(s.total_sent for s in self.sources.values())
         total_errors = sum(s.total_errors for s in self.sources.values())
-        # Unconditional, mirroring total_sent above: both are lifetime counters,
-        # not "currently active" breakdowns. A source can accrue total_sent via
-        # a scenario firing even while disabled, and per_transport must still
-        # reconcile with total_sent when that happens.
+        # Sums each source's sent_by_transport (recorded per-send, at the
+        # transport actually used) rather than bucketing total_sent by the
+        # source's *current* transport_name — a source switched from syslog
+        # to http mid-run still shows its earlier sends under syslog.
         per_transport: dict[str, int] = {"http": 0, "syslog": 0, "wec": 0}
         for s in self.sources.values():
-            per_transport[s.transport_name] = per_transport.get(s.transport_name, 0) + s.total_sent
+            for transport_name, count in s.sent_by_transport.items():
+                per_transport[transport_name] = per_transport.get(transport_name, 0) + count
 
         eps_actual = sum(s.eps_window.rate() for s in self.sources.values())
 

@@ -3,6 +3,12 @@ import { AlertTriangle } from 'lucide-react'
 
 interface Props {
   children: ReactNode
+  // When this changes (e.g. the route pathname), a previously-tripped
+  // boundary resets automatically -- without it, navigating away from a page
+  // that threw during render leaves the content pane stuck on the error
+  // screen (the nav highlight changes but Routes never gets a chance to
+  // re-render its children while state.error is still set).
+  resetKey?: unknown
 }
 
 interface State {
@@ -14,6 +20,12 @@ export default class ErrorBoundary extends Component<Props, State> {
 
   static getDerivedStateFromError(error: Error): State {
     return { error }
+  }
+
+  componentDidUpdate(prevProps: Props) {
+    if (this.state.error && prevProps.resetKey !== this.props.resetKey) {
+      this.setState({ error: null })
+    }
   }
 
   render() {

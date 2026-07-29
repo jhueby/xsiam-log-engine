@@ -8,16 +8,22 @@ from collections import deque
 class TokenBucket:
     """Token bucket rate limiter for per-source EPS control."""
 
+    # A rate of 0 (or negative) would make acquire()'s wait-time division
+    # blow up (or go unthrottled), and it can reach here from more than one
+    # ingress path (config file, not just the validated PATCH API) — so it's
+    # clamped at construction/update time rather than trusted from callers.
+    MIN_RATE = 0.1
+
     def __init__(self, rate: float, capacity: float | None = None):
-        self.rate = rate
-        self.capacity = capacity or max(rate, 1.0)
+        self.rate = max(rate, self.MIN_RATE)
+        self.capacity = capacity or max(self.rate, 1.0)
         self._tokens = self.capacity
         self._last_refill = time.monotonic()
         self._lock = asyncio.Lock()
 
     def set_rate(self, rate: float) -> None:
-        self.rate = rate
-        self.capacity = max(rate, 1.0)
+        self.rate = max(rate, self.MIN_RATE)
+        self.capacity = max(self.rate, 1.0)
 
     async def acquire(self) -> None:
         async with self._lock:

@@ -7,8 +7,13 @@ from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 from sse_starlette.sse import EventSourceResponse
 
-from api.models import ControlResponse, HealthResponse
+from pydantic import ValidationError
+
+from api.models import ControlResponse, HealthResponse, SourceConfigPatch
 from main import get_engine
+from utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api", tags=["control"])
 
@@ -32,13 +37,28 @@ async def reload_config() -> ControlResponse:
     from config.settings import load_defaults
     engine = get_engine()
     defaults = load_defaults().get("sources", {})
+    skipped: list[str] = []
     for sid, state in engine.sources.items():
         cfg = defaults.get(sid, {})
-        if "eps" in cfg:
-            state.set_eps(cfg["eps"])
-        if "transport" in cfg:
-            state.set_transport(cfg["transport"])
-    return ControlResponse(ok=True, message="Config reloaded from disk")
+        if "eps" in cfg or "transport" in cfg:
+            try:
+                # Route file-based config through the same bounds the PATCH
+                # API enforces (SourceConfigPatch's eps ge=0.1/le=10000) —
+                # defaults.yaml is hand-edited and shouldn't get a free pass
+                # around validation the API doesn't allow.
+                patch = SourceConfigPatch(eps=cfg.get("eps"), transport=cfg.get("transport"))
+            except ValidationError as exc:
+                skipped.append(sid)
+                logger.error({"event": "reload_invalid_config", "source": sid, "error": str(exc)})
+                continue
+            if patch.eps is not None:
+                state.set_eps(patch.eps)
+            if patch.transport is not None:
+                state.set_transport(patch.transport)
+    message = "Config reloaded from disk"
+    if skipped:
+        message += f" (skipped invalid entries: {', '.join(skipped)})"
+    return ControlResponse(ok=True, message=message)
 
 
 @router.get("/health", response_model=HealthResponse)

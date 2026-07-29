@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, NavLink, useLocation } from 'react-router-dom'
 import { useEffect, useState } from 'react'
 import { Activity, Settings, List, Eye, Terminal, GitBranch, Swords } from 'lucide-react'
 import Dashboard from './pages/Dashboard'
@@ -52,6 +52,26 @@ function SidebarHealth() {
   )
 }
 
+function MainRoutes() {
+  // useLocation() must run inside <BrowserRouter>, so this is a child
+  // component rather than inlined in App() -- its pathname is the resetKey
+  // that lets ErrorBoundary recover on navigation.
+  const location = useLocation()
+  return (
+    <ErrorBoundary resetKey={location.pathname}>
+      <Routes>
+        <Route path="/" element={<Dashboard />} />
+        <Route path="/sources" element={<Sources />} />
+        <Route path="/correlations" element={<CorrelationRules />} />
+        <Route path="/scenarios" element={<Scenarios />} />
+        <Route path="/config" element={<Configuration />} />
+        <Route path="/logs" element={<LogViewer />} />
+        <Route path="/diagnostics" element={<Diagnostics />} />
+      </Routes>
+    </ErrorBoundary>
+  )
+}
+
 export default function App() {
   return (
     <ToastProvider>
@@ -91,17 +111,7 @@ export default function App() {
             </div>
           </aside>
           <main className="flex-1 overflow-auto bg-gray-100 dark:bg-gray-950">
-            <ErrorBoundary>
-              <Routes>
-                <Route path="/" element={<Dashboard />} />
-                <Route path="/sources" element={<Sources />} />
-                <Route path="/correlations" element={<CorrelationRules />} />
-                <Route path="/scenarios" element={<Scenarios />} />
-                <Route path="/config" element={<Configuration />} />
-                <Route path="/logs" element={<LogViewer />} />
-                <Route path="/diagnostics" element={<Diagnostics />} />
-              </Routes>
-            </ErrorBoundary>
+            <MainRoutes />
           </main>
         </div>
         <KeyboardShortcuts />

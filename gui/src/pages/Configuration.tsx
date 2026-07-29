@@ -6,6 +6,7 @@ import ConfigPanel from '../components/ConfigPanel'
 const EMPTY_CONFIG: TransportConfig = {
   xsiam_url: '',
   xsiam_api_key: '',
+  xsiam_configured: false,
   xsiam_dataset: 'xsiam_log_engine',
   xsiam_api_url: '',
   xsiam_api_key_id: '',

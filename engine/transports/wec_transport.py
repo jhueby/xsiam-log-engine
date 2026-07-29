@@ -57,8 +57,13 @@ def _parse_subscription_url(url: str) -> tuple[str, int]:
 
 def _build_ssl_context() -> ssl.SSLContext:
     ctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
-    ctx.check_hostname = False  # must disable before setting CERT_NONE
-    ctx.verify_mode = ssl.CERT_NONE
+    if settings.tls_ca_cert_path:
+        # Opt-in: verify the BrokerVM's server cert against the given CA
+        # bundle (hostname + chain), instead of trusting whatever it presents.
+        ctx.load_verify_locations(cafile=settings.tls_ca_cert_path)
+    else:
+        ctx.check_hostname = False  # must disable before setting CERT_NONE
+        ctx.verify_mode = ssl.CERT_NONE
     try:
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", DeprecationWarning)

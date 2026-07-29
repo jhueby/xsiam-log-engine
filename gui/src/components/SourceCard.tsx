@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import {
   CorrelationRuleInfo,
   HttpCompression,
@@ -62,8 +62,25 @@ interface Props {
 export default function SourceCard({ source, onUpdate }: Props) {
   const [loading, setLoading] = useState(false)
   const [eps, setEps] = useState(source.eps)
+  const [transport, setTransport] = useState(source.transport)
   const [showHttp, setShowHttp] = useState(false)
   const { show } = useToast()
+  // Guards the prop-resync effects below from clobbering a change that's
+  // still in flight (e.g. a poll landing between setEps(val) and the PATCH
+  // resolving would otherwise snap the slider back to the pre-change value).
+  const epsPendingRef = useRef(false)
+  const transportPendingRef = useRef(false)
+
+  // Resync from the server on every poll (Dashboard/Sources refetch every
+  // 3s) so this card reflects changes made elsewhere (another tab, another
+  // API caller) instead of only ever showing whatever was last set locally.
+  useEffect(() => {
+    if (!epsPendingRef.current) setEps(source.eps)
+  }, [source.eps])
+
+  useEffect(() => {
+    if (!transportPendingRef.current) setTransport(source.transport)
+  }, [source.transport])
 
   const toggle = async () => {
     setLoading(true)
@@ -84,21 +101,32 @@ export default function SourceCard({ source, onUpdate }: Props) {
   }
 
   const handleEpsChange = async (val: number) => {
+    const previous = eps
+    epsPendingRef.current = true
     setEps(val)
     try {
       await patchSource(source.id, { eps: val })
     } catch {
       show('Failed to update EPS', 'error')
+      setEps(previous)
+    } finally {
+      epsPendingRef.current = false
     }
   }
 
-  const handleTransportChange = async (transport: string) => {
+  const handleTransportChange = async (newTransport: string) => {
+    const previous = transport
+    transportPendingRef.current = true
+    setTransport(newTransport)
     try {
-      await patchSource(source.id, { transport })
-      show(`${source.display_name} → ${transport}`, 'success')
+      await patchSource(source.id, { transport: newTransport })
+      show(`${source.display_name} → ${newTransport}`, 'success')
       onUpdate()
     } catch {
       show('Failed to change transport', 'error')
+      setTransport(previous)
+    } finally {
+      transportPendingRef.current = false
     }
   }
 
@@ -147,9 +175,9 @@ export default function SourceCard({ source, onUpdate }: Props) {
       <div className="flex items-center gap-2 flex-wrap">
         {source.supported_transports.length > 1 ? (
           <select
-            value={source.transport}
+            value={transport}
             onChange={e => handleTransportChange(e.target.value)}
-            className={`text-xs px-1.5 py-0.5 rounded border-0 cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-500 ${TRANSPORT_COLORS[source.transport] || 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400'}`}
+            className={`text-xs px-1.5 py-0.5 rounded border-0 cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-500 ${TRANSPORT_COLORS[transport] || 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400'}`}
           >
             {source.supported_transports.map(t => (
               <option key={t} value={t}>{t}</option>
@@ -226,7 +254,7 @@ export default function SourceCard({ source, onUpdate }: Props) {
         </div>
       )}
 
-      {source.transport === 'http' && (
+      {transport === 'http' && (
         <div className="border-t border-gray-100 dark:border-gray-800 pt-2">
           <button
             onClick={() => setShowHttp(v => !v)}
@@ -415,11 +443,15 @@ function CorrelationRuleBlock({ sourceId }: { sourceId: string }) {
     }
   }
 
-  const copy = () => {
+  const copy = async () => {
     if (!rule) return
-    navigator.clipboard.writeText(rule.xql_query)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+    try {
+      await navigator.clipboard.writeText(rule.xql_query)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      show('Failed to copy — clipboard access was denied', 'error')
+    }
   }
 
   if (!rule) return null
@@ -482,10 +514,15 @@ function CorrelationRuleBlock({ sourceId }: { sourceId: string }) {
 function ParsingRuleBlock({ sourceId }: { sourceId: string }) {
   const [copied, setCopied] = useState(false)
   const rule = makeParsingRule(sourceId)
-  const copy = () => {
-    navigator.clipboard.writeText(rule)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+  const { show } = useToast()
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(rule)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      show('Failed to copy — clipboard access was denied', 'error')
+    }
   }
   return (
     <div className="border-t border-gray-100 dark:border-gray-800 pt-2 space-y-1">

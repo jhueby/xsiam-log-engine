@@ -29,6 +29,7 @@ async def get_config() -> TransportConfig:
     return TransportConfig(
         xsiam_url=settings.xsiam_url,
         xsiam_api_key="***" if settings.xsiam_api_key else "",
+        xsiam_configured=bool(settings.xsiam_api_key) and settings.xsiam_api_key != "changeme",
         xsiam_dataset=settings.xsiam_dataset,
         xsiam_api_url=settings.xsiam_api_url,
         xsiam_api_key_id=settings.xsiam_api_key_id,

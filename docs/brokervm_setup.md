@@ -10,7 +10,7 @@
 | Protocol | Default Port | `.env` Variable | Purpose |
 |----------|-------------|----------------|---------|
 | UDP/TCP/TLS | 514 | `BROKERVM_SYSLOG_PORT` | Syslog ingestion |
-| HTTP/HTTPS | 5985/5986 | `BROKERVM_WEC_PORT` | WEC/WinRM ingestion |
+| HTTPS (mutual TLS) | 5986 | `BROKERVM_WEC_PORT` | WEC/WinRM ingestion |
 | HTTPS | 443 | `XSIAM_URL` | Direct XSIAM HTTP ingest |
 
 ## Syslog Listener Configuration
@@ -34,11 +34,12 @@ Mount certs in `docker-compose.yml` under `./certs:/app/certs:ro`.
 
 ## WEC / WEF Configuration
 
-The BrokerVM's WEC endpoint accepts Windows Event Log XML over WS-Management (WinRM):
+The BrokerVM's WEC endpoint accepts Windows Event Log XML over WS-Management (WinRM). WEC is **always mutual TLS** — there is no plain-HTTP mode:
 
-1. Enable the WEC collector on BrokerVM port 5985 (HTTP) or 5986 (HTTPS)
-2. Set `BROKERVM_WEC_PORT` and `BROKERVM_WEC_USE_TLS` accordingly
-3. The engine sends SOAP envelopes with full EVTX-compatible XML
+1. Enable the WEC collector on BrokerVM port 5986 (HTTPS)
+2. Set `WEC_SUBSCRIPTION_URL` to the subscription manager string copied from the BrokerVM (this also sets host + port — see the root [README](../README.md#wec-setup)), or set `BROKERVM_WEC_PORT` directly as a fallback
+3. Upload the BrokerVM-issued `.pfx` client certificate under GUI **Configuration → WEC Client Certificate** — authentication is mutual TLS, so this is required, not optional
+4. The engine sends SOAP envelopes with full EVTX-compatible XML over the resulting TLS connection
 
 ## XSIAM Direct HTTP Ingest
 
@@ -52,11 +53,11 @@ For HTTP sources (CrowdStrike, Okta, Azure AD, AWS CloudTrail):
    XSIAM_API_KEY=<your-api-key>
    ```
 
-The engine signs each request with HMAC-SHA256 per the XSIAM spec:
-- Header `x-xdr-auth-id`: auth ID (currently "1")
-- Header `x-xdr-nonce`: random UUID without dashes
-- Header `x-xdr-timestamp`: Unix ms timestamp
-- Header `x-xdr-hmac`: `HMAC-SHA256(api_key, api_key + nonce + timestamp)`
+The engine sends the API key verbatim as the `Authorization` header on every request — no request signing:
+- Header `Authorization`: `<XSIAM_API_KEY>`
+- Header `Content-Type`: set per source's configured HTTP log type (JSON/raw/CEF/LEEF)
+
+(This is separate from the *Public API* used for correlation-rule management, which authenticates with `Authorization: <XSIAM_API_SECRET>` + `x-xdr-auth-id: <XSIAM_API_KEY_ID>` — see `XSIAM_API_URL`/`XSIAM_API_KEY_ID`/`XSIAM_API_SECRET` in the root README's Configuration table.)
 
 ## Testing Connectivity
 
@@ -64,15 +65,14 @@ The engine signs each request with HMAC-SHA256 per the XSIAM spec:
 # Test syslog UDP
 echo '<134>Jun 11 12:00:00 test engine: connectivity check' | nc -u <BROKERVM_HOST> 514
 
-# Test WEC endpoint
-curl -v http://<BROKERVM_HOST>:5985/wsman
+# Test WEC endpoint (expect a TLS handshake, not a plain HTTP response — WEC is mutual TLS only)
+curl -vk https://<BROKERVM_HOST>:5986/wsman
 
 # Test XSIAM HTTP
 curl -X POST <XSIAM_URL> \
   -H "Content-Type: application/json" \
-  -H "x-xdr-auth-id: 1" \
-  -H "x-xdr-nonce: abc123" \
-  -d '[{"test": "event"}]'
+  -H "Authorization: <XSIAM_API_KEY>" \
+  -d '{"test": "event"}'
 ```
 
 ## Health Check

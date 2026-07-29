@@ -37,7 +37,7 @@ class Settings(BaseSettings):
     brokervm_host: str = "127.0.0.1"
     brokervm_syslog_port: int = 514
     brokervm_syslog_proto: Literal["udp", "tcp", "tls"] = "udp"
-    brokervm_wec_port: int = 5985
+    brokervm_wec_port: int = 5986
 
     # WEC
     wec_subscription_url: str = ""  # Server=HTTPS://host:port/wsman/...,Refresh=N,IssuerCA=THUMBPRINT
@@ -45,6 +45,12 @@ class Settings(BaseSettings):
     # TLS client cert (set by .pfx upload, not edited directly)
     tls_client_cert_path: str = ""
     tls_client_key_path: str = ""
+
+    # Optional CA bundle to verify the BrokerVM's server certificate against
+    # (WEC and syslog-TLS). Unset (default) keeps this a lab tool that trusts
+    # a self-signed BrokerVM with no verification, matching prior behavior;
+    # set this to turn hostname + chain verification on.
+    tls_ca_cert_path: str = ""
 
     # Engine
     engine_api_port: int = 8080
