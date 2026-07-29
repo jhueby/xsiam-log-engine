@@ -103,12 +103,14 @@ class XsiamApiClient:
 
     # Headers are built per-request so GUI config changes apply without restart.
     @staticmethod
-    def _headers() -> dict[str, str]:
-        return {
+    def _headers(has_body: bool) -> dict[str, str]:
+        headers = {
             "Authorization": settings.xsiam_api_secret,
             "x-xdr-auth-id": settings.xsiam_api_key_id,
-            "Content-Type": "application/json",
         }
+        if has_body:
+            headers["Content-Type"] = "application/json"
+        return headers
 
     async def _request(self, method: str, path: str, body: dict[str, Any] | None = None) -> Any:
         if not self.is_configured():
@@ -117,7 +119,13 @@ class XsiamApiClient:
         logger.info({"event": "xsiam_api_request", "method": method, "url": url})
         try:
             client = self._get_client()
-            resp = await client.request(method, url, json=body, headers=self._headers())
+            # Some tenant-side deployments eagerly parse the request body as
+            # JSON whenever Content-Type: application/json is present -- a
+            # bodyless GET (list_rules) that still carries that header trips
+            # a bug on their end (an empty-body JSON parse crashing their
+            # WSGI app), surfacing as an opaque 500 with no useful detail.
+            # Only send the header when there's an actual body to describe.
+            resp = await client.request(method, url, json=body, headers=self._headers(body is not None))
         except Exception as e:
             logger.error({"event": "xsiam_api_connect_error", "url": url, "error": str(e)})
             raise XsiamApiError(0, f"Could not reach the XSIAM API at {url}: {e}") from e

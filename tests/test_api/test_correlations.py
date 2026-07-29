@@ -198,6 +198,35 @@ async def test_remove_all_config_cleared_midflight_returns_400_not_502(client, m
 
 @pytest.mark.asyncio
 @respx.mock
+async def test_list_request_carries_no_content_type_header(client):
+    """Regression: some tenant-side deployments eagerly parse the request
+    body as JSON whenever Content-Type: application/json is present, even on
+    a bodyless GET -- crashing their WSGI app with an empty-body JSON parse
+    error and returning an opaque 500 with no useful detail. list_rules()
+    sends no body, so it must not send that header either."""
+    list_route = _mock_list([])
+
+    resp = await client.get("/api/correlations")
+    assert resp.status_code == 200
+    assert list_route.called
+    assert "content-type" not in list_route.calls.last.request.headers
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_push_request_still_carries_content_type_header(client):
+    """The GET fix must not regress requests that do have a body."""
+    _mock_list([])
+    post_route = respx.post(CORR_URL).mock(return_value=Response(200, json={"reply": True}))
+
+    resp = await client.post("/api/correlations/okta")
+    assert resp.status_code == 200
+    assert post_route.called
+    assert post_route.calls.last.request.headers["content-type"] == "application/json"
+
+
+@pytest.mark.asyncio
+@respx.mock
 async def test_upstream_403_maps_to_502(client):
     respx.get(CORR_URL).mock(return_value=Response(403, json={"reply": {"err_msg": "forbidden"}}))
 
