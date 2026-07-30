@@ -8,6 +8,8 @@ Use it to exercise XSIAM/XDR ingestion, validate parsing rules, demo dashboards,
 - **Async engine** with per-source rate limiting (events/sec), live config reload, and a circuit breaker
 - **Realistic generators** — vendor-accurate fields, Windows event schemas, CEF/LEEF/syslog framing, JSON EDR/identity/cloud events
 
+![Dashboard — per-source EPS controls, live stats, and tag-filterable source grid](docs/images/dashboard.png)
+
 ---
 
 ## Contents
