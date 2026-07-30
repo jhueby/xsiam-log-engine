@@ -94,3 +94,45 @@ Returns:
 ```
 
 `false` means the transport target is unreachable. The engine continues generating logs regardless — errors are counted in `GET /api/stats`.
+
+> Note the limit of this check: `syslog: true` only means a socket connected. Nothing in this repo receives and *parses* the traffic, so framing correctness (RFC 5424, octet counting) and the WEC mutual-TLS handshake can't be verified without a real BrokerVM. See the options below.
+
+---
+
+## Can the BrokerVM run as a container in this stack?
+
+Short answer: **not as a native container.** This came up as a "deploy BVM" button idea; the trade-offs are captured here so the decision isn't re-litigated from scratch.
+
+### Why not natively
+
+The BrokerVM ships as OVA, QCOW2, VHD, VHD_Azure, or VMDK. Those are all **VM disk images** — a full OS including its own kernel. Docker containers share the host kernel and start a process; there is no `docker run` path for any of these formats.
+
+Extracting the root filesystem (`qemu-nbd` / `libguestfs` → `docker import`) is technically possible but not advisable:
+
+- The BrokerVM is an appliance built around systemd as PID 1, kernel modules, and device access — most of which doesn't survive the transplant.
+- The result can't be activated, updated, or supported through normal Palo Alto channels.
+- Repackaging a licensed Palo Alto appliance is very likely contrary to its EULA, independent of whether it works.
+
+### Option A — QEMU/KVM inside a container
+
+A compose service running QEMU (e.g. a `qemux/qemu`-style image) can boot a user-supplied QCOW2. This is legitimate — the image stays the operator's own download, nothing is repackaged or redistributed.
+
+Constraints to weigh:
+
+- Requires `/dev/kvm` and an effectively privileged container. Rules out Docker Desktop on macOS/Windows without nested-virt pain, and most CI.
+- Resource cost is disproportionate to this stack: the engine is capped at **2 CPU / 512 MB**, while a BrokerVM wants roughly 8 vCPU / 16 GB RAM and hundreds of GB of disk depending on which applets are enabled. *(Verify against current Palo Alto documentation — sizing changes between releases.)*
+- Activation and tenant pairing remain manual, so a one-click button would save a `qemu-system-x86_64` invocation, not the actual setup work.
+
+If pursued, keep it an opt-in overlay (`docker-compose.bvm.yml`) referencing an operator-supplied image path — never bundle the appliance image in this repo.
+
+### Option B — a local BrokerVM stand-in (protocol sink)
+
+A small service implementing the *receiving* side of the three transports: syslog UDP/TCP/TLS on 514, a WEC/WS-Man HTTPS endpoint on 5986 with mutual TLS, and an HTTP collector endpoint — surfacing what actually arrived, decoded.
+
+This closes the gap noted above the fold: RFC 5424 framing, TCP octet counting, TLS client-cert handshakes, and SOAP envelope structure all become verifiable offline, on any host, with no licensing questions.
+
+What it deliberately does **not** do: prove a *real* BrokerVM accepts the traffic, or exercise the BVM→XSIAM leg. It is a protocol-conformance target, not an emulator, and should be labelled that way wherever it appears in the UI so a green light is never mistaken for real BVM validation.
+
+### Current status
+
+Neither option is implemented. Option B is the recommended starting point if local end-to-end verification becomes a priority; Option A only makes sense for someone with the hardware who needs true appliance behavior.
