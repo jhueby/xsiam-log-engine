@@ -15,11 +15,17 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'engine')
 from api.app import app
 from config.settings import settings
 from xsiam_api import xsiam_api_client
-from xsiam_api.client import CORRELATIONS_GET_PATH, CORRELATIONS_PATH, INCIDENTS_PATH
+from xsiam_api.client import (
+    CORRELATIONS_DELETE_PATH,
+    CORRELATIONS_GET_PATH,
+    CORRELATIONS_INSERT_PATH,
+    INCIDENTS_PATH,
+)
 
 API_BASE = "https://api-test.example.com"
-CORR_URL = API_BASE + CORRELATIONS_PATH
 CORR_GET_URL = API_BASE + CORRELATIONS_GET_PATH
+CORR_INSERT_URL = API_BASE + CORRELATIONS_INSERT_PATH
+CORR_DELETE_URL = API_BASE + CORRELATIONS_DELETE_PATH
 INCIDENTS_URL = API_BASE + INCIDENTS_PATH
 
 OKTA_RULE = {
@@ -62,7 +68,10 @@ def _mock_list(rules):
 @respx.mock
 async def test_push_to_empty_tenant(client):
     _mock_list([])
-    post_route = respx.post(CORR_URL).mock(return_value=Response(200, json={"reply": True}))
+    post_route = respx.post(CORR_INSERT_URL).mock(return_value=Response(200, json={"added_objects": [{"id": 1}], "errors": []}))
+    # upsert is delete-then-insert (there is no update endpoint), so the
+    # pre-delete goes out even against an empty tenant -- a no-op there.
+    respx.post(CORR_DELETE_URL).mock(return_value=Response(200, json={"objects_count": 0, "objects": []}))
 
     resp = await client.post("/api/correlations/okta")
     assert resp.status_code == 200
@@ -86,7 +95,7 @@ async def test_push_to_empty_tenant(client):
 @respx.mock
 async def test_push_conflict_never_calls_post(client):
     _mock_list([OKTA_RULE])
-    post_route = respx.post(CORR_URL).mock(return_value=Response(200, json={"reply": True}))
+    post_route = respx.post(CORR_INSERT_URL).mock(return_value=Response(200, json={"added_objects": [{"id": 1}], "errors": []}))
 
     resp = await client.post("/api/correlations/okta")
     assert resp.status_code == 409
@@ -98,12 +107,18 @@ async def test_push_conflict_never_calls_post(client):
 @respx.mock
 async def test_push_with_overwrite(client):
     _mock_list([OKTA_RULE])
-    post_route = respx.post(CORR_URL).mock(return_value=Response(200, json={"reply": True}))
+    post_route = respx.post(CORR_INSERT_URL).mock(return_value=Response(200, json={"added_objects": [{"id": 1}], "errors": []}))
+    delete_route = respx.post(CORR_DELETE_URL).mock(return_value=Response(200, json={"objects_count": 1, "objects": [1]}))
 
     resp = await client.post("/api/correlations/okta?overwrite=true")
     assert resp.status_code == 200
     assert "updated" in resp.json()["message"]
     assert post_route.called
+    # /insert always creates -- pushing over an existing name without first
+    # deleting produced duplicate same-named rules on a real tenant, so an
+    # overwrite must delete first.
+    assert delete_route.called
+    assert "[LogSim] okta" in delete_route.calls.last.request.content.decode()
 
 
 @pytest.mark.asyncio
@@ -117,7 +132,7 @@ async def test_push_unknown_source(client):
 @respx.mock
 async def test_delete_missing_never_calls_delete(client):
     _mock_list([])
-    delete_route = respx.delete(CORR_URL).mock(return_value=Response(200, json={"reply": True}))
+    delete_route = respx.post(CORR_DELETE_URL).mock(return_value=Response(200, json={"objects_count": 1, "objects": [1]}))
 
     resp = await client.delete("/api/correlations/okta")
     assert resp.status_code == 404
@@ -129,7 +144,7 @@ async def test_delete_missing_never_calls_delete(client):
 @respx.mock
 async def test_delete_existing(client):
     _mock_list([OKTA_RULE])
-    delete_route = respx.delete(CORR_URL).mock(return_value=Response(200, json={"reply": True}))
+    delete_route = respx.post(CORR_DELETE_URL).mock(return_value=Response(200, json={"objects_count": 1, "objects": [1]}))
 
     resp = await client.delete("/api/correlations/okta")
     assert resp.status_code == 200
@@ -156,7 +171,7 @@ async def test_list_filters_to_managed(client):
 @respx.mock
 async def test_remove_all_only_touches_managed(client):
     _mock_list([OKTA_RULE, USER_RULE])
-    delete_route = respx.delete(CORR_URL).mock(return_value=Response(200, json={"reply": True}))
+    delete_route = respx.post(CORR_DELETE_URL).mock(return_value=Response(200, json={"objects_count": 1, "objects": [1]}))
 
     resp = await client.delete("/api/correlations")
     assert resp.status_code == 200
@@ -170,7 +185,7 @@ async def test_remove_all_only_touches_managed(client):
 async def test_remove_all_deletes_concurrently_not_sequentially(client):
     okta2 = {**OKTA_RULE, "name": "[LogSim] crowdstrike_falcon"}
     _mock_list([OKTA_RULE, okta2, USER_RULE])
-    delete_route = respx.delete(CORR_URL).mock(return_value=Response(200, json={"reply": True}))
+    delete_route = respx.post(CORR_DELETE_URL).mock(return_value=Response(200, json={"objects_count": 1, "objects": [1]}))
 
     resp = await client.delete("/api/correlations")
     assert resp.status_code == 200
@@ -262,6 +277,79 @@ async def test_list_rules_maps_is_enabled_not_enabled(client):
     resp = await client.get("/api/correlations?all=true")
     assert resp.status_code == 200
     assert resp.json()[0]["enabled"] is False
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_insert_payload_matches_tenant_required_schema(client):
+    """Regression: /insert rejects a partial object -- it requires the full
+    field set, a SEV_0N0_* severity enum (not the plain word the engine used
+    to send), is_enabled (not enabled), and mapping_strategy CUSTOM ("AUTO"
+    is advertised as valid but rejected in practice). All confirmed live."""
+    import json as _json
+
+    _mock_list([])
+    respx.post(CORR_DELETE_URL).mock(return_value=Response(200, json={"objects_count": 0, "objects": []}))
+    post_route = respx.post(CORR_INSERT_URL).mock(return_value=Response(200, json={"added_objects": [{"id": 1}], "errors": []}))
+
+    resp = await client.post("/api/correlations/okta")
+    assert resp.status_code == 200
+
+    sent = _json.loads(post_route.calls.last.request.content.decode())
+    assert isinstance(sent["request_data"], list)  # "should contain only a list of JSONs"
+    obj = sent["request_data"][0]
+
+    required = {
+        "name", "alert_domain", "drilldown_query_timeframe", "severity", "alert_name",
+        "mitre_defs", "user_defined_category", "action", "dataset", "lookup_mapping",
+        "execution_mode", "user_defined_severity", "suppression_fields",
+        "suppression_duration", "mapping_strategy", "simple_schedule", "search_window",
+        "alert_category", "crontab", "timezone", "suppression_enabled",
+        "alert_description", "description", "alert_fields", "investigation_query_link",
+        "xql_query", "is_enabled", "alert_type",
+    }
+    assert required <= set(obj), f"missing required fields: {required - set(obj)}"
+    assert obj["severity"].startswith("SEV_")
+    assert obj["mapping_strategy"] == "CUSTOM"
+    assert "enabled" not in obj  # the real field is is_enabled
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_insert_partial_failure_is_not_reported_as_success(client):
+    """Regression: /insert returns HTTP 200 with a populated "errors" list
+    when some items fail, so a status-only check would report a rule that was
+    never created as successfully pushed."""
+    _mock_list([])
+    respx.post(CORR_DELETE_URL).mock(return_value=Response(200, json={"objects_count": 0, "objects": []}))
+    respx.post(CORR_INSERT_URL).mock(return_value=Response(200, json={
+        "added_objects": [],
+        "updated_objects": [],
+        "errors": [{"index": 0, "status": "Failed to create correlation rule due to: Invalid severity: NOPE"}],
+    }))
+
+    resp = await client.post("/api/correlations/okta")
+    assert resp.status_code == 502
+    assert "Invalid severity" in resp.json()["detail"]
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_delete_uses_scoped_name_filter(client):
+    """Regression: delete takes filters, not {"names": [...]}. An unfiltered
+    delete is rejected by the API ("At least one filter is required"), and the
+    filter must be scoped to the one engine-managed name."""
+    import json as _json
+
+    _mock_list([OKTA_RULE])
+    delete_route = respx.post(CORR_DELETE_URL).mock(return_value=Response(200, json={"objects_count": 1, "objects": [1]}))
+
+    resp = await client.delete("/api/correlations/okta")
+    assert resp.status_code == 200
+
+    sent = _json.loads(delete_route.calls.last.request.content.decode())
+    filters = sent["request_data"]["filters"]
+    assert filters == [{"field": "name", "operator": "eq", "value": "[LogSim] okta"}]
 
 
 @pytest.mark.asyncio
