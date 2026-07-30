@@ -15,6 +15,15 @@ from scenarios.runner import ScenarioRun
 router = APIRouter(prefix="/api/scenarios", tags=["scenarios"])
 
 
+def _is_correlated(source_id: str) -> bool | None:
+    """Whether this step's source joins the run's shared entity story, or
+    None if the source doesn't exist (the /run endpoint rejects those)."""
+    state = get_engine().sources.get(source_id)
+    if not state:
+        return None
+    return type(state.source).supports_scenario_entities()
+
+
 def _scenario_to_info(defn: dict) -> ScenarioInfo:
     return ScenarioInfo(
         id=defn["id"],
@@ -26,6 +35,7 @@ def _scenario_to_info(defn: dict) -> ScenarioInfo:
                 delay=float(step.get("delay", 0)),
                 jitter=float(step.get("jitter", 0)),
                 overrides=step.get("overrides") or {},
+                correlated=_is_correlated(step["source"]),
             )
             for step in defn["steps"]
         ],
@@ -57,6 +67,7 @@ def _run_to_info(run: ScenarioRun) -> ScenarioRunInfo:
                 status=s.status,
                 fired_at=s.fired_at,
                 error=s.error,
+                correlated=_is_correlated(s.source),
             )
             for s in run.steps
         ],

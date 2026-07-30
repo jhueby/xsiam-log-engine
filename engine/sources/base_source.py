@@ -55,6 +55,18 @@ class LogSource(ABC):
         """
         return await self.generate()
 
+    @classmethod
+    def supports_scenario_entities(cls) -> bool:
+        """True when this source actually overrides generate_with_entities.
+
+        The base implementation silently falls back to uncorrelated
+        generate(), which keeps every source safe to reference in a scenario
+        -- but means a step can look like it participates in the shared story
+        while emitting unrelated random data. Callers use this to say so
+        rather than let the UI imply a correlation that isn't there.
+        """
+        return cls.generate_with_entities is not LogSource.generate_with_entities
+
     def to_dict(self) -> dict:
         return {
             "id": self.id,

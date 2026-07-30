@@ -164,6 +164,10 @@ export interface ScenarioStepInfo {
   delay: number
   jitter: number
   overrides: Record<string, unknown>
+  // false when the source doesn't implement generate_with_entities: the step
+  // still fires, but with ordinary random data rather than the run's shared
+  // identity/host. null when the source is unknown.
+  correlated: boolean | null
 }
 
 export interface ScenarioInfo {

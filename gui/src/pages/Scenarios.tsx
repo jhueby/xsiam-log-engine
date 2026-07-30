@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { AlertTriangle, Play, Square, CheckCircle, XCircle, Clock } from 'lucide-react'
+import { AlertTriangle, Play, Square, CheckCircle, XCircle, Clock, Unlink } from 'lucide-react'
 import {
   ScenarioInfo,
   ScenarioRunInfo,
@@ -100,11 +100,31 @@ export default function Scenarios() {
               </div>
               <div className="flex flex-wrap gap-1.5">
                 {s.steps.map((step, i) => (
-                  <span key={i} className="text-xs px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 font-mono">
+                  <span
+                    key={i}
+                    title={step.correlated === false
+                      ? `${step.source} doesn't support scenario entities — this step fires ordinary random data instead of joining the shared identity/host story`
+                      : undefined}
+                    className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded font-mono ${
+                      step.correlated === false
+                        ? 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-300'
+                        : 'bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400'
+                    }`}
+                  >
                     {step.source}
+                    {step.correlated === false && <Unlink size={10} />}
                   </span>
                 ))}
               </div>
+              {s.steps.some(step => step.correlated === false) && (
+                <div className="text-xs text-yellow-700 dark:text-yellow-400 flex items-start gap-1.5">
+                  <Unlink size={11} className="flex-shrink-0 mt-0.5" />
+                  <span>
+                    Highlighted sources don't support scenario entities — those steps still fire,
+                    but with random data rather than this run's shared identity.
+                  </span>
+                </div>
+              )}
               <button
                 onClick={() => start(s.id)}
                 disabled={starting === s.id}
@@ -152,6 +172,13 @@ export default function Scenarios() {
                   >
                     {STEP_ICON[step.status]}
                     {step.source}
+                    {step.correlated === false && (
+                      <Unlink
+                        size={10}
+                        className="text-yellow-600 dark:text-yellow-400"
+                        aria-label="not entity-correlated"
+                      />
+                    )}
                   </div>
                 ))}
               </div>

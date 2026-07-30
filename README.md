@@ -188,11 +188,19 @@ unrelated per-source noise. Two are shipped (`engine/scenarios/definitions/*.yam
 Four sources (`okta`, `crowdstrike_falcon`, `aws_cloudtrail`, `proofpoint_tap`) accept a shared
 `ScenarioEntities` (username/domain user/host/internal+external IP) and per-step `overrides`
 (e.g. force a specific `event_type`); every other source safely no-ops back to its normal
-`generate()` if ever referenced in a scenario step. Runs execute as background asyncio tasks with
-per-step delay + jitter timed from scenario start, independent of whether a source's own EPS loop
-is running, and share the same transport/stats/log-ring path as normal traffic. Add a scenario by
-dropping a new YAML file in `engine/scenarios/definitions/` — no code changes required unless it
-needs a source that doesn't yet accept entity overrides.
+`generate()` if ever referenced in a scenario step. Those steps still fire, but with ordinary
+random data rather than the run's shared identity — the API reports a per-step `correlated` flag
+and the GUI marks such steps, so a scenario never silently implies a correlation it isn't
+delivering. Runs execute as background asyncio tasks with per-step delay + jitter timed from
+scenario start, independent of whether a source's own EPS loop is running, and share the same
+transport/stats/log-ring path as normal traffic.
+
+Add a scenario by dropping a new `.yaml`/`.yml` file in `engine/scenarios/definitions/` and
+calling `POST /api/control/reload` (no restart needed). Definitions are validated on load: a file
+that isn't valid YAML, or whose steps are missing a `source`, is skipped with a logged reason
+rather than breaking the other scenarios. `delay`/`jitter` are seconds, absolute from scenario
+start — a step scheduled earlier than its predecessor fires immediately, which the loader warns
+about.
 
 ---
 
@@ -267,7 +275,7 @@ This is a lab/testing tool; defaults assume it runs on a trusted network. Curren
 ## Development
 
 ```bash
-# Tests (188 passing: sources, transports HTTP/Syslog/WEC, API, scenarios, engine)
+# Tests (207 passing: sources, transports HTTP/Syslog/WEC, API, scenarios, engine)
 pip install -r engine/requirements.txt
 pytest tests/ -q
 pytest tests/ --cov=engine --cov-report=term-missing   # with coverage

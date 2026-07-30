@@ -73,6 +73,15 @@ class ScenarioRunner:
         # keep in sync.
         self.runs: dict[str, ScenarioRun] = {}
 
+    def reload(self) -> int:
+        """Re-read the definitions directory so a dropped-in YAML becomes
+        runnable without restarting the engine. In-flight runs are untouched:
+        they already hold their own resolved copy of the steps, so replacing
+        the definitions dict can't change what a running scenario does."""
+        self.definitions = load_scenarios()
+        logger.info({"event": "scenarios_reloaded", "count": len(self.definitions)})
+        return len(self.definitions)
+
     def list_scenarios(self) -> list[dict]:
         return list(self.definitions.values())
 
@@ -134,7 +143,15 @@ class ScenarioRunner:
             try:
                 await asyncio.wait_for(run.task, timeout=5.0)
             except asyncio.TimeoutError:
+                # The task didn't actually stop, so the run is still running.
+                # Reporting success here told the caller (and the GUI) the run
+                # was cancelled while it kept firing events.
                 logger.error({"event": "scenario_cancel_timeout", "run_id": run_id})
+                return False
+            except asyncio.CancelledError:
+                # Expected: awaiting a cancelled task re-raises here. _execute
+                # has already recorded status="cancelled" in its own handler.
+                pass
         return True
 
     async def cancel_all(self) -> None:

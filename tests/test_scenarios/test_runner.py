@@ -227,3 +227,83 @@ async def test_cancel_all_awaits_tasks_before_returning():
 
     assert run.task.done()
     assert run.status == "cancelled"
+
+
+@pytest.mark.asyncio
+async def test_reload_picks_up_new_definitions_without_restart(tmp_path, monkeypatch):
+    """Definitions were read once in __init__, so a dropped-in YAML needed a
+    full engine restart to become runnable."""
+    import scenarios.loader as loader_module
+
+    d = tmp_path / "definitions"
+    d.mkdir()
+    (d / "first.yaml").write_text("id: first\nname: First\nsteps:\n  - source: okta\n")
+    monkeypatch.setattr(loader_module, "_DEFINITIONS_DIR", d)
+
+    runner = ScenarioRunner(FakeEngine())
+    assert set(runner.definitions) == {"first"}
+
+    (d / "second.yaml").write_text("id: second\nname: Second\nsteps:\n  - source: okta\n")
+    count = runner.reload()
+
+    assert count == 2
+    assert set(runner.definitions) == {"first", "second"}
+
+
+@pytest.mark.asyncio
+async def test_reload_does_not_disturb_in_flight_runs(tmp_path, monkeypatch):
+    """A run holds its own resolved steps, so swapping the definitions dict
+    mid-flight must not change or break it."""
+    import scenarios.loader as loader_module
+
+    d = tmp_path / "definitions"
+    d.mkdir()
+    (d / "slow.yaml").write_text("id: slow\nname: Slow\nsteps:\n  - source: okta\n    delay: 30\n")
+    monkeypatch.setattr(loader_module, "_DEFINITIONS_DIR", d)
+
+    runner = ScenarioRunner(FakeEngine())
+    run = runner.start("slow")
+    await asyncio.sleep(0.01)
+
+    (d / "slow.yaml").unlink()  # definition removed from disk entirely
+    runner.reload()
+
+    assert runner.definitions == {}
+    assert run.status == "running"          # in-flight run survives
+    assert runner.get_run(run.run_id) is run
+
+    await runner.cancel(run.run_id)
+    assert run.status == "cancelled"
+
+
+@pytest.mark.asyncio
+async def test_cancel_reports_failure_when_task_does_not_stop():
+    """Regression: cancel() returned True even after the 5s wait timed out,
+    telling the caller (and the GUI) a run was cancelled while it was still
+    firing events."""
+    scenario = {
+        "id": "_stubborn",
+        "name": "Stubborn",
+        "description": "",
+        "steps": [{"source": "okta", "delay": 30, "jitter": 0, "overrides": {}}],
+    }
+    runner = ScenarioRunner(FakeEngine())
+    runner.definitions = {"_stubborn": scenario}
+    run = runner.start("_stubborn")
+    await asyncio.sleep(0.01)
+
+    async def never_finishes(_task, timeout):
+        raise asyncio.TimeoutError
+
+    import scenarios.runner as runner_module
+    original = runner_module.asyncio.wait_for
+    runner_module.asyncio.wait_for = never_finishes
+    try:
+        assert await runner.cancel(run.run_id) is False
+    finally:
+        runner_module.asyncio.wait_for = original
+        run.task.cancel()
+        try:
+            await run.task
+        except asyncio.CancelledError:
+            pass

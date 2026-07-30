@@ -128,6 +128,10 @@ class ScenarioStepInfo(BaseModel):
     delay: float
     jitter: float
     overrides: dict
+    # False when the step's source doesn't implement generate_with_entities:
+    # it still fires, but emits ordinary random data instead of joining the
+    # run's shared identity/host story. None when the source is unknown.
+    correlated: bool | None = None
 
 
 class ScenarioInfo(BaseModel):
@@ -154,6 +158,7 @@ class ScenarioStepStatusInfo(BaseModel):
     status: Literal["pending", "fired", "error"]
     fired_at: str | None
     error: str | None
+    correlated: bool | None = None
 
 
 class ScenarioRunInfo(BaseModel):

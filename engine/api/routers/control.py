@@ -55,7 +55,12 @@ async def reload_config() -> ControlResponse:
                 state.set_eps(patch.eps)
             if patch.transport is not None:
                 state.set_transport(patch.transport)
-    message = "Config reloaded from disk"
+    # Scenario definitions are read from disk the same way source config is,
+    # so "reload from disk" covers both -- otherwise a dropped-in scenario
+    # YAML needs a full engine restart to become runnable.
+    scenario_count = engine.scenarios.reload()
+
+    message = f"Config reloaded from disk ({scenario_count} scenario(s))"
     if skipped:
         message += f" (skipped invalid entries: {', '.join(skipped)})"
     return ControlResponse(ok=True, message=message)

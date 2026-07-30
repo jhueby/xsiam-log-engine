@@ -153,3 +153,58 @@ async def test_list_runs_reflects_started_run(client):
     assert resp.status_code == 200
     run_ids = [r["run_id"] for r in resp.json()]
     assert run["run_id"] in run_ids
+
+
+@pytest.mark.asyncio
+async def test_steps_expose_whether_the_source_is_entity_correlated(client):
+    """Only 4 of the 22 sources implement generate_with_entities; the rest
+    silently fall back to uncorrelated generate(). The API says which is
+    which so the GUI doesn't imply a correlation that isn't happening."""
+    engine = get_engine()
+    engine.scenarios.definitions = {
+        **engine.scenarios.definitions,
+        "_test_mixed": {
+            "id": "_test_mixed",
+            "name": "Mixed",
+            "description": "",
+            "steps": [
+                {"source": "okta", "delay": 0, "jitter": 0, "overrides": {}},
+                {"source": "windows_security", "delay": 0, "jitter": 0, "overrides": {}},
+            ],
+        },
+    }
+
+    resp = await client.get("/api/scenarios")
+    assert resp.status_code == 200
+    scenario = next(s for s in resp.json() if s["id"] == "_test_mixed")
+    by_source = {s["source"]: s["correlated"] for s in scenario["steps"]}
+
+    assert by_source["okta"] is True             # implements generate_with_entities
+    assert by_source["windows_security"] is False  # falls back to generate()
+
+
+@pytest.mark.asyncio
+async def test_run_steps_also_expose_correlated(client):
+    run = (await client.post("/api/scenarios/_test_fast/run")).json()
+    detail = (await client.get(f"/api/scenarios/runs/{run['run_id']}")).json()
+    assert all("correlated" in step for step in detail["steps"])
+
+
+@pytest.mark.asyncio
+async def test_unknown_source_reports_correlated_as_null(client):
+    """An unknown source can't be introspected -- null rather than a
+    misleading false. (Running such a scenario is rejected separately.)"""
+    engine = get_engine()
+    engine.scenarios.definitions = {
+        **engine.scenarios.definitions,
+        "_test_unknown_src": {
+            "id": "_test_unknown_src",
+            "name": "Unknown source",
+            "description": "",
+            "steps": [{"source": "no_such_source_xyz", "delay": 0, "jitter": 0, "overrides": {}}],
+        },
+    }
+
+    resp = await client.get("/api/scenarios")
+    scenario = next(s for s in resp.json() if s["id"] == "_test_unknown_src")
+    assert scenario["steps"][0]["correlated"] is None
