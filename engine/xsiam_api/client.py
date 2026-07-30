@@ -16,7 +16,20 @@ RULE_PREFIX = "[LogSim] "
 # The wire paths and field names below are the only places that know the
 # XSIAM public API schema. If a real tenant disagrees (field naming, request
 # wrapper), fix it here — nothing outside this module parses raw responses.
+#
+# The Cortex public API is POST/JSON-RPC-style throughout, not REST-ish —
+# every operation (including reads) is a POST to a verb-suffixed path with a
+# {"request_data": {...}} body, confirmed against a real tenant. GET
+# /public_api/v1/correlations/ (this module's original guess) doesn't exist
+# on the tenant's gateway at all -- it 500s exactly like any other unroutable
+# path there (confirmed by probing a deliberately bogus endpoint and getting
+# the identical generic error), rather than the 401/403 a feature-gated-but-
+# present endpoint would return. CORRELATIONS_PATH (bare, method-per-verb) is
+# still used by upsert_rule()/delete_rule() below, but that's unverified
+# against a real tenant -- likely wrong for the same reason, but not yet
+# confirmed, so left as-is rather than guessed at.
 CORRELATIONS_PATH = "/public_api/v1/correlations/"
+CORRELATIONS_GET_PATH = "/public_api/v1/correlations/get"
 INCIDENTS_PATH = "/public_api/v1/incidents/get_incidents/"
 
 TIMEOUT = 15.0
@@ -41,13 +54,23 @@ class XsiamApiNotConfigured(XsiamApiError):
 
 
 def _from_api(raw: dict[str, Any]) -> dict[str, Any]:
-    """Normalize one rule object from the wire into engine-internal form."""
+    """Normalize one rule object from the wire into engine-internal form.
+
+    Confirmed against a real tenant's /correlations/get response: the
+    enabled flag is actually named is_enabled (this module originally
+    guessed "enabled", which silently always read as True/missing on real
+    data -- every rule looked enabled regardless of its real state). severity
+    comes back as a Cortex enum (e.g. "SEV_020_LOW"), not the plain word
+    upsert_rule() currently sends ("informational") -- surfaced as-is here
+    rather than normalized, since the create/update side of this mismatch
+    isn't fixed yet.
+    """
     return {
         "name": raw.get("name") or raw.get("rule_name") or "",
         "description": raw.get("description") or "",
         "xql_query": raw.get("xql_query") or raw.get("xql") or raw.get("query") or "",
         "severity": raw.get("severity") or "",
-        "enabled": bool(raw.get("enabled", True)),
+        "enabled": bool(raw.get("is_enabled", raw.get("enabled", True))),
         "dataset": raw.get("dataset") or "",
     }
 
@@ -142,8 +165,26 @@ class XsiamApiClient:
         return payload.get("reply", payload) if isinstance(payload, dict) else payload
 
     async def list_rules(self) -> list[dict[str, Any]]:
-        reply = await self._request("GET", CORRELATIONS_PATH)
-        return _extract_rule_list(reply)
+        # Paginated rather than a single unbounded request -- the tenant
+        # enforces a hard max window size (confirmed live -- err_extra:
+        # "Search size must fulfill the requirement: 0 < search_size <=
+        # 100"), so a single request can't reliably fetch everything past
+        # 100 rules; this loops until a short page signals the end.
+        page_size = 100
+        max_pages = 50  # safety valve against an unexpected non-terminating loop
+        all_rules: list[dict[str, Any]] = []
+        search_from = 0
+        for _ in range(max_pages):
+            reply = await self._request(
+                "POST", CORRELATIONS_GET_PATH,
+                {"request_data": {"search_from": search_from, "search_to": search_from + page_size}},
+            )
+            page = _extract_rule_list(reply)
+            all_rules.extend(page)
+            if len(page) < page_size:
+                break
+            search_from += page_size
+        return all_rules
 
     async def upsert_rule(self, rule: dict[str, Any]) -> dict[str, Any]:
         await self._request("POST", CORRELATIONS_PATH, {"request_data": [_to_api(rule)]})

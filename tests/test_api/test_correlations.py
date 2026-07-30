@@ -15,10 +15,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'engine')
 from api.app import app
 from config.settings import settings
 from xsiam_api import xsiam_api_client
-from xsiam_api.client import CORRELATIONS_PATH, INCIDENTS_PATH
+from xsiam_api.client import CORRELATIONS_GET_PATH, CORRELATIONS_PATH, INCIDENTS_PATH
 
 API_BASE = "https://api-test.example.com"
 CORR_URL = API_BASE + CORRELATIONS_PATH
+CORR_GET_URL = API_BASE + CORRELATIONS_GET_PATH
 INCIDENTS_URL = API_BASE + INCIDENTS_PATH
 
 OKTA_RULE = {
@@ -26,7 +27,7 @@ OKTA_RULE = {
     "description": "existing",
     "xql_query": "dataset = okta_system_log_raw",
     "severity": "informational",
-    "enabled": True,
+    "is_enabled": True,
     "dataset": "okta_system_log_raw",
 }
 USER_RULE = {"name": "My custom rule", "xql_query": "dataset = foo"}
@@ -49,7 +50,12 @@ def xsiam_api_settings(monkeypatch):
 
 
 def _mock_list(rules):
-    return respx.get(CORR_URL).mock(return_value=Response(200, json={"reply": rules}))
+    # Real tenant shape (confirmed live): POST .../correlations/get with a
+    # {"request_data": {...}} body, response un-wrapped (no "reply" key) as
+    # {"objects_count": N, "objects": [...]}.
+    return respx.post(CORR_GET_URL).mock(
+        return_value=Response(200, json={"objects_count": len(rules), "objects": rules})
+    )
 
 
 @pytest.mark.asyncio
@@ -198,37 +204,70 @@ async def test_remove_all_config_cleared_midflight_returns_400_not_502(client, m
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_list_request_carries_no_content_type_header(client):
+async def test_bodyless_request_carries_no_content_type_header():
     """Regression: some tenant-side deployments eagerly parse the request
     body as JSON whenever Content-Type: application/json is present, even on
-    a bodyless GET -- crashing their WSGI app with an empty-body JSON parse
-    error and returning an opaque 500 with no useful detail. list_rules()
-    sends no body, so it must not send that header either."""
+    a request with no body -- crashing their WSGI app with an empty-body JSON
+    parse error and returning an opaque 500 with no useful detail. Every
+    current caller happens to send a body (list_rules() now does too, since
+    it moved to POST .../correlations/get), so this exercises _request()
+    directly rather than via a specific endpoint -- the header logic itself
+    is still load-bearing for any future bodyless call."""
+    route = respx.get(API_BASE + "/no-body-path").mock(return_value=Response(200, json={}))
+
+    await xsiam_api_client._request("GET", "/no-body-path")
+
+    assert route.called
+    assert "content-type" not in route.calls.last.request.headers
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_request_with_body_still_carries_content_type_header():
+    """The bodyless-request fix must not regress requests that do have a body."""
+    route = respx.post(API_BASE + "/with-body-path").mock(return_value=Response(200, json={}))
+
+    await xsiam_api_client._request("POST", "/with-body-path", {"foo": "bar"})
+
+    assert route.called
+    assert route.calls.last.request.headers["content-type"] == "application/json"
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_list_rules_posts_to_get_path_with_request_data(client):
+    """Regression: the original guess (GET /public_api/v1/correlations/) isn't
+    a real endpoint on an actual tenant -- it 500s exactly like any other
+    unroutable path there. The real endpoint is POST .../correlations/get
+    with a {"request_data": {...}} body, confirmed live."""
     list_route = _mock_list([])
 
     resp = await client.get("/api/correlations")
     assert resp.status_code == 200
     assert list_route.called
-    assert "content-type" not in list_route.calls.last.request.headers
+    req = list_route.calls.last.request
+    assert req.method == "POST"
+    assert "request_data" in req.content.decode()
 
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_push_request_still_carries_content_type_header(client):
-    """The GET fix must not regress requests that do have a body."""
-    _mock_list([])
-    post_route = respx.post(CORR_URL).mock(return_value=Response(200, json={"reply": True}))
+async def test_list_rules_maps_is_enabled_not_enabled(client):
+    """Regression: the real field is is_enabled, not enabled -- the original
+    guess meant every rule silently read back as enabled=True regardless of
+    its actual state on the tenant."""
+    disabled_rule = {**OKTA_RULE, "is_enabled": False}
+    _mock_list([disabled_rule])
 
-    resp = await client.post("/api/correlations/okta")
+    resp = await client.get("/api/correlations?all=true")
     assert resp.status_code == 200
-    assert post_route.called
-    assert post_route.calls.last.request.headers["content-type"] == "application/json"
+    assert resp.json()[0]["enabled"] is False
 
 
 @pytest.mark.asyncio
 @respx.mock
 async def test_upstream_403_maps_to_502(client):
-    respx.get(CORR_URL).mock(return_value=Response(403, json={"reply": {"err_msg": "forbidden"}}))
+    respx.post(CORR_GET_URL).mock(return_value=Response(403, json={"reply": {"err_msg": "forbidden"}}))
 
     resp = await client.get("/api/correlations")
     assert resp.status_code == 502
@@ -305,7 +344,7 @@ async def test_validate_bad_credentials_skips_correlations(client):
 async def test_validate_role_gate_detected(client):
     respx.get(API_BASE + "/").mock(return_value=Response(200))
     respx.post(INCIDENTS_URL).mock(return_value=Response(200, json={"reply": {}}))
-    respx.get(CORR_URL).mock(return_value=Response(403, json={}))
+    respx.post(CORR_GET_URL).mock(return_value=Response(403, json={}))
 
     resp = await client.post("/api/config/validate")
     data = resp.json()
