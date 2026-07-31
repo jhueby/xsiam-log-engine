@@ -117,3 +117,36 @@ def test_normalized_steps_are_safe_for_downstream_indexing(tmp_path, monkeypatch
             assert isinstance(step["delay"], float)
             assert isinstance(step["jitter"], float)
             assert isinstance(step["overrides"], dict)
+
+
+def test_shipped_scenarios_only_reference_real_sources():
+    """A scenario referencing an unknown source is rejected at run time with
+    a 400, so a typo in a shipped definition would ship a permanently
+    unrunnable scenario."""
+    from sources import get_registry
+
+    known = set(get_registry())
+    for scenario_id, defn in load_scenarios().items():
+        for step in defn["steps"]:
+            assert step["source"] in known, f"{scenario_id}: unknown source '{step['source']}'"
+
+
+def test_gift_card_scenario_is_fully_entity_correlated():
+    """The Jingle Thief campaign is an identity story -- every step must join
+    the shared entity, or the scenario shows one victim as several unrelated
+    users and the correlation it's meant to demonstrate falls apart."""
+    from sources import get_registry
+
+    registry = get_registry()
+    defn = load_scenarios()["gift_card_fraud_m365"]
+    for step in defn["steps"]:
+        source = registry[step["source"]]
+        assert type(source).supports_scenario_entities(), (
+            f"step '{step['source']}' doesn't implement generate_with_entities"
+        )
+
+
+def test_shipped_scenario_delays_are_ordered():
+    for scenario_id, defn in load_scenarios().items():
+        delays = [s["delay"] for s in defn["steps"]]
+        assert delays == sorted(delays), f"{scenario_id}: delays out of order {delays}"

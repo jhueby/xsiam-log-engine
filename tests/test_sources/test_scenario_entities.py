@@ -1,4 +1,4 @@
-"""Tests that the four scenario-aware sources actually substitute the shared
+"""Tests that the scenario-aware sources actually substitute the shared
 entity/override values, and that every other source safely falls back to
 plain generate() via the base class default."""
 import json
@@ -114,3 +114,68 @@ async def test_proofpoint_honors_falsy_sender_ip_override():
     event = await source.generate_with_entities(ENTITIES, {"event_type": "messagesBlocked", "sender_ip": ""})
     data = json.loads(event.raw)
     assert data["senderIP"] == ""
+
+
+@pytest.mark.asyncio
+async def test_azure_ad_signin_uses_entities_and_overrides():
+    source = get_registry()["azure_ad"]
+    event = await source.generate_with_entities(
+        ENTITIES, {"log_type": "SignInLogs", "app": "SharePoint Online", "result_type": "0"}
+    )
+    data = json.loads(event.raw)
+    assert data["category"] == "SignInLogs"
+    assert data["resultType"] == "0"
+    assert data["properties"]["appDisplayName"] == "SharePoint Online"
+    assert data["properties"]["userPrincipalName"] == "jsmith@corp.local"
+    # Driven from attacker infrastructure, not the user's own workstation.
+    assert data["callerIpAddress"] == "203.0.113.9"
+    assert data["properties"]["ipAddress"] == "203.0.113.9"
+    assert data["properties"]["deviceDetail"]["displayName"] == "WIN-TESTHOST"
+
+
+@pytest.mark.asyncio
+async def test_azure_ad_audit_uses_entities_and_defaults_target_to_self():
+    """Self-service operations (registering an authenticator, resetting your
+    own password) target the same principal that initiated them -- that
+    self-targeting is what makes the abuse blend into normal activity."""
+    source = get_registry()["azure_ad"]
+    event = await source.generate_with_entities(
+        ENTITIES, {"log_type": "AuditLogs", "operation": "User registered security info"}
+    )
+    data = json.loads(event.raw)
+    assert data["category"] == "AuditLogs"
+    assert data["operationName"] == "User registered security info"
+    assert data["properties"]["initiatedBy"]["user"]["userPrincipalName"] == "jsmith@corp.local"
+    assert data["properties"]["targetResources"][0]["userPrincipalName"] == "jsmith@corp.local"
+
+
+@pytest.mark.asyncio
+async def test_azure_ad_honors_falsy_ip_override():
+    source = get_registry()["azure_ad"]
+    event = await source.generate_with_entities(ENTITIES, {"log_type": "SignInLogs", "ip": ""})
+    assert json.loads(event.raw)["callerIpAddress"] == ""
+
+
+@pytest.mark.asyncio
+async def test_azure_ad_plain_generate_still_works():
+    """The refactor to shared builders must not change non-scenario output.
+
+    Loops rather than sampling once: generate() picks the log type randomly,
+    and the two shapes put the user in different places (SignInLogs at
+    properties.userPrincipalName, AuditLogs under initiatedBy), so a single
+    call only exercises whichever branch it happened to land on.
+    """
+    source = get_registry()["azure_ad"]
+    seen = set()
+    for _ in range(40):
+        data = json.loads((await source.generate()).raw)
+        category = data["category"]
+        seen.add(category)
+        assert category in ("SignInLogs", "AuditLogs")
+        if category == "SignInLogs":
+            assert data["properties"]["userPrincipalName"]
+            assert data["properties"]["appDisplayName"]
+        else:
+            assert data["properties"]["initiatedBy"]["user"]["userPrincipalName"]
+            assert data["operationName"]
+    assert seen == {"SignInLogs", "AuditLogs"}, f"only exercised {seen}"

@@ -184,8 +184,9 @@ unrelated per-source noise. Two are shipped (`engine/scenarios/definitions/*.yam
 
 - **Phishing to Exfiltration** — Proofpoint click → Okta SSO sign-in → CrowdStrike detection → AWS CloudTrail `GetObject`.
 - **Insider Privilege Escalation** — Okta password change → AWS `CreateAccessKey`/`AttachUserPolicy` → CrowdStrike process activity.
+- **Cloud Gift Card Fraud (Jingle Thief)** — modeled on [Unit 42's CL-CRI-1032 writeup](https://unit42.paloaltonetworks.com/cloud-based-gift-card-fraud-campaign): phishing mail → click-through to a fake M365 portal → Entra ID sign-in from attacker infrastructure → SharePoint recon → rogue authenticator enrollment for MFA persistence → internal phish → gift card app access. Entirely identity-based — no malware, no privilege escalation — which makes it a good test of identity-centric detection content.
 
-Four sources (`okta`, `crowdstrike_falcon`, `aws_cloudtrail`, `proofpoint_tap`) accept a shared
+Five sources (`okta`, `crowdstrike_falcon`, `aws_cloudtrail`, `proofpoint_tap`, `azure_ad`) accept a shared
 `ScenarioEntities` (username/domain user/host/internal+external IP) and per-step `overrides`
 (e.g. force a specific `event_type`); every other source safely no-ops back to its normal
 `generate()` if ever referenced in a scenario step. Those steps still fire, but with ordinary
@@ -275,7 +276,7 @@ This is a lab/testing tool; defaults assume it runs on a trusted network. Curren
 ## Development
 
 ```bash
-# Tests (207 passing: sources, transports HTTP/Syslog/WEC, API, scenarios, engine)
+# Tests (214 passing: sources, transports HTTP/Syslog/WEC, API, scenarios, engine)
 pip install -r engine/requirements.txt
 pytest tests/ -q
 pytest tests/ --cov=engine --cov-report=term-missing   # with coverage

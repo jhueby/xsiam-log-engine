@@ -6,7 +6,7 @@ import uuid
 from datetime import datetime, timezone
 from faker import Faker
 
-from sources.base_source import LogEvent, LogSource, TransportName
+from sources.base_source import LogEvent, LogSource, ScenarioEntities, TransportName
 from utils.faker_helpers import random_domain_user, random_external_ip, random_internal_ip
 
 fake = Faker()
@@ -37,7 +37,137 @@ _AUDIT_OPERATIONS = [
     "Add app role assignment to user",
     "Add service principal",
     "Update application",
+    # Device / MFA self-service operations. These are the ones abused for
+    # identity persistence (enrolling an attacker-controlled authenticator or
+    # device so MFA keeps succeeding after a password reset).
+    "User registered security info",
+    "User changed default security info",
+    "Add registered device",
+    "Add device registration user",
 ]
+
+
+def _signin_event(*, user: str, ip: str, device_name: str, app: str,
+                  result_type: str, now: datetime, tenant_id: str) -> dict:
+    result_desc = _RESULT_DESCS.get(result_type, "Unknown error")
+    mfa_detail = {}
+    if random.random() < 0.6:
+        mfa_detail = {
+            "authDetail": random.choice(["MFA completed in Azure AD", "MFA denied; fraud reported", "MFA requirement satisfied by claim in the token"]),
+            "authMethod": random.choice(["Mobile app notification", "Phone call", "Authenticator App", "OATH hardware token"]),
+        }
+    return {
+        "time": now.isoformat(),
+        "resourceId": f"/tenants/{tenant_id}/providers/Microsoft.aadiam",
+        "operationName": "Sign-in activity",
+        "operationVersion": "1.0",
+        "category": "SignInLogs",
+        "tenantId": tenant_id,
+        "resultType": result_type,
+        "resultSignature": "None",
+        "resultDescription": result_desc,
+        "durationMs": random.randint(50, 5000),
+        "callerIpAddress": ip,
+        "correlationId": str(uuid.uuid4()),
+        "Level": "4",
+        "location": fake.country_code(),
+        "properties": {
+            "id": str(uuid.uuid4()),
+            "createdDateTime": now.isoformat(),
+            "userDisplayName": fake.name(),
+            "userPrincipalName": user,
+            "userId": str(uuid.uuid4()),
+            "appId": str(uuid.uuid4()),
+            "appDisplayName": app,
+            "ipAddress": ip,
+            "clientAppUsed": random.choice(["Browser", "Mobile Apps and Desktop clients", "Exchange ActiveSync clients"]),
+            "userAgent": fake.user_agent(),
+            "correlationId": str(uuid.uuid4()),
+            "conditionalAccessStatus": random.choice(["success", "failure", "notApplied"]),
+            "appliedConditionalAccessPolicies": [
+                {"id": str(uuid.uuid4()), "displayName": p, "enforcedGrantControls": [], "result": "success"}
+                for p in random.sample(_CA_POLICIES, k=random.randint(0, 2))
+            ],
+            "authenticationDetails": [
+                {
+                    "authenticationStepDateTime": now.isoformat(),
+                    "authenticationMethod": random.choice(["Password", "Multi-factor authentication"]),
+                    "authenticationMethodDetail": random.choice(["Password in the cloud", "Phone app notification"]),
+                    "succeeded": result_type == "0",
+                    "resultDetail": result_desc,
+                }
+            ],
+            "mfaDetail": mfa_detail,
+            "networkLocationDetails": [],
+            "deviceDetail": {
+                "deviceId": str(uuid.uuid4()),
+                "displayName": device_name,
+                "operatingSystem": random.choice(["Windows 11", "macOS 14", "iOS 17", "Android 13"]),
+                "browser": random.choice(["Chrome 124.0", "Firefox 126.0", "Safari 17.0", "Edge 124.0"]),
+                "isCompliant": random.random() < 0.8,
+                "trustType": random.choice(["Azure AD joined", "Hybrid Azure AD joined", "Registered"]),
+            },
+            "location": {
+                "city": fake.city(),
+                "state": fake.state(),
+                "countryOrRegion": fake.country_code(),
+                "geoCoordinates": {"latitude": float(fake.latitude()), "longitude": float(fake.longitude())},
+            },
+            "status": {"errorCode": int(result_type), "failureReason": result_desc if result_type != "0" else None},
+            "riskDetail": "none",
+            "riskLevelAggregated": random.choice(["none", "low", "medium", "high"]),
+            "riskLevelDuringSignIn": random.choice(["none", "low", "medium"]),
+            "riskState": random.choice(["none", "confirmedSafe", "remediated", "atRisk"]),
+        },
+    }
+
+
+def _audit_event(*, user: str, ip: str, op: str, target_user: str,
+                 now: datetime, tenant_id: str) -> dict:
+    return {
+        "time": now.isoformat(),
+        "resourceId": f"/tenants/{tenant_id}/providers/Microsoft.aadiam",
+        "operationName": op,
+        "operationVersion": "1.0",
+        "category": "AuditLogs",
+        "tenantId": tenant_id,
+        "resultType": "0",
+        "resultSignature": "None",
+        "resultDescription": "None",
+        "durationMs": random.randint(10, 500),
+        "callerIpAddress": ip,
+        "correlationId": str(uuid.uuid4()),
+        "Level": "4",
+        "location": fake.country_code(),
+        "properties": {
+            "id": str(uuid.uuid4()),
+            "category": "UserManagement",
+            "correlationId": str(uuid.uuid4()),
+            "result": "success",
+            "resultReason": "",
+            "activityDisplayName": op,
+            "activityDateTime": now.isoformat(),
+            "loggedByService": "Core Directory",
+            "operationType": random.choice(["Add", "Update", "Delete"]),
+            "initiatedBy": {
+                "user": {
+                    "id": str(uuid.uuid4()),
+                    "displayName": fake.name(),
+                    "userPrincipalName": user,
+                    "ipAddress": ip,
+                }
+            },
+            "targetResources": [
+                {
+                    "id": str(uuid.uuid4()),
+                    "displayName": fake.name(),
+                    "type": "User",
+                    "userPrincipalName": target_user,
+                }
+            ],
+            "additionalDetails": [],
+        },
+    }
 
 
 class AzureADSource(LogSource):
@@ -58,127 +188,70 @@ class AzureADSource(LogSource):
         tenant_id = str(uuid.uuid4())
 
         if log_type == "SignInLogs":
-            result_type = random.choices(_RESULT_TYPES, weights=_RESULT_WEIGHTS)[0]
-            result_desc = _RESULT_DESCS.get(result_type, "Unknown error")
-            app = random.choice(_APPS)
-            mfa_detail = {}
-            if random.random() < 0.6:
-                mfa_detail = {
-                    "authDetail": random.choice(["MFA completed in Azure AD", "MFA denied; fraud reported", "MFA requirement satisfied by claim in the token"]),
-                    "authMethod": random.choice(["Mobile app notification", "Phone call", "Authenticator App", "OATH hardware token"]),
-                }
-
-            event = {
-                "time": now.isoformat(),
-                "resourceId": f"/tenants/{tenant_id}/providers/Microsoft.aadiam",
-                "operationName": "Sign-in activity",
-                "operationVersion": "1.0",
-                "category": "SignInLogs",
-                "tenantId": tenant_id,
-                "resultType": result_type,
-                "resultSignature": "None",
-                "resultDescription": result_desc,
-                "durationMs": random.randint(50, 5000),
-                "callerIpAddress": ip,
-                "correlationId": str(uuid.uuid4()),
-                "Level": "4",
-                "location": fake.country_code(),
-                "properties": {
-                    "id": str(uuid.uuid4()),
-                    "createdDateTime": now.isoformat(),
-                    "userDisplayName": fake.name(),
-                    "userPrincipalName": user,
-                    "userId": str(uuid.uuid4()),
-                    "appId": str(uuid.uuid4()),
-                    "appDisplayName": app,
-                    "ipAddress": ip,
-                    "clientAppUsed": random.choice(["Browser", "Mobile Apps and Desktop clients", "Exchange ActiveSync clients"]),
-                    "userAgent": fake.user_agent(),
-                    "correlationId": str(uuid.uuid4()),
-                    "conditionalAccessStatus": random.choice(["success", "failure", "notApplied"]),
-                    "appliedConditionalAccessPolicies": [
-                        {"id": str(uuid.uuid4()), "displayName": p, "enforcedGrantControls": [], "result": "success"}
-                        for p in random.sample(_CA_POLICIES, k=random.randint(0, 2))
-                    ],
-                    "authenticationDetails": [
-                        {
-                            "authenticationStepDateTime": now.isoformat(),
-                            "authenticationMethod": random.choice(["Password", "Multi-factor authentication"]),
-                            "authenticationMethodDetail": random.choice(["Password in the cloud", "Phone app notification"]),
-                            "succeeded": result_type == "0",
-                            "resultDetail": result_desc,
-                        }
-                    ],
-                    "mfaDetail": mfa_detail,
-                    "networkLocationDetails": [],
-                    "deviceDetail": {
-                        "deviceId": str(uuid.uuid4()),
-                        "displayName": fake.hostname(),
-                        "operatingSystem": random.choice(["Windows 11", "macOS 14", "iOS 17", "Android 13"]),
-                        "browser": random.choice(["Chrome 124.0", "Firefox 126.0", "Safari 17.0", "Edge 124.0"]),
-                        "isCompliant": random.random() < 0.8,
-                        "trustType": random.choice(["Azure AD joined", "Hybrid Azure AD joined", "Registered"]),
-                    },
-                    "location": {
-                        "city": fake.city(),
-                        "state": fake.state(),
-                        "countryOrRegion": fake.country_code(),
-                        "geoCoordinates": {"latitude": float(fake.latitude()), "longitude": float(fake.longitude())},
-                    },
-                    "status": {"errorCode": int(result_type), "failureReason": result_desc if result_type != "0" else None},
-                    "riskDetail": "none",
-                    "riskLevelAggregated": random.choice(["none", "low", "medium", "high"]),
-                    "riskLevelDuringSignIn": random.choice(["none", "low", "medium"]),
-                    "riskState": random.choice(["none", "confirmedSafe", "remediated", "atRisk"]),
-                },
-            }
+            event = _signin_event(
+                user=user, ip=ip, device_name=fake.hostname(),
+                app=random.choice(_APPS),
+                result_type=random.choices(_RESULT_TYPES, weights=_RESULT_WEIGHTS)[0],
+                now=now, tenant_id=tenant_id,
+            )
         else:
-            op = random.choice(_AUDIT_OPERATIONS)
-            target_user = random_domain_user()
-            event = {
-                "time": now.isoformat(),
-                "resourceId": f"/tenants/{tenant_id}/providers/Microsoft.aadiam",
-                "operationName": op,
-                "operationVersion": "1.0",
-                "category": "AuditLogs",
-                "tenantId": tenant_id,
-                "resultType": "0",
-                "resultSignature": "None",
-                "resultDescription": "None",
-                "durationMs": random.randint(10, 500),
-                "callerIpAddress": ip,
-                "correlationId": str(uuid.uuid4()),
-                "Level": "4",
-                "location": fake.country_code(),
-                "properties": {
-                    "id": str(uuid.uuid4()),
-                    "category": "UserManagement",
-                    "correlationId": str(uuid.uuid4()),
-                    "result": "success",
-                    "resultReason": "",
-                    "activityDisplayName": op,
-                    "activityDateTime": now.isoformat(),
-                    "loggedByService": "Core Directory",
-                    "operationType": random.choice(["Add", "Update", "Delete"]),
-                    "initiatedBy": {
-                        "user": {
-                            "id": str(uuid.uuid4()),
-                            "displayName": fake.name(),
-                            "userPrincipalName": user,
-                            "ipAddress": ip,
-                        }
-                    },
-                    "targetResources": [
-                        {
-                            "id": str(uuid.uuid4()),
-                            "displayName": fake.name(),
-                            "type": "User",
-                            "userPrincipalName": target_user,
-                        }
-                    ],
-                    "additionalDetails": [],
-                },
-            }
+            event = _audit_event(
+                user=user, ip=ip, op=random.choice(_AUDIT_OPERATIONS),
+                target_user=random_domain_user(), now=now, tenant_id=tenant_id,
+            )
+
+        return LogEvent(
+            raw=json.dumps(event),
+            structured=event,
+            format="json",
+            source_id=self.id,
+        )
+
+    async def generate_with_entities(
+        self, entities: ScenarioEntities, overrides: dict | None = None
+    ) -> LogEvent:
+        """Scenario mode: pin the sign-in/audit record to the run's shared
+        identity so an Entra-centric story (phish -> sign-in -> recon ->
+        MFA-persistence) reads as one user rather than several unrelated ones.
+
+        Recognized overrides: log_type ("SignInLogs"/"AuditLogs"), app,
+        result_type, operation, target_user, ip.
+        """
+        overrides = overrides or {}
+        # .get(key, default) -- not `or` -- so an explicit falsy override
+        # (e.g. "") is honored instead of silently replaced by random data.
+        log_type = overrides.get("log_type", random.choices(_LOG_TYPES, weights=_TYPE_WEIGHTS)[0])
+        now = datetime.now(timezone.utc)
+        tenant_id = str(uuid.uuid4())
+        # External by default: in these stories the identity is being driven
+        # from attacker infrastructure, not the user's own workstation.
+        ip = overrides.get("ip", entities.external_ip)
+
+        if log_type == "SignInLogs":
+            event = _signin_event(
+                user=entities.domain_user,
+                ip=ip,
+                device_name=entities.host,
+                app=overrides.get("app", random.choice(_APPS)),
+                result_type=overrides.get(
+                    "result_type", random.choices(_RESULT_TYPES, weights=_RESULT_WEIGHTS)[0]
+                ),
+                now=now,
+                tenant_id=tenant_id,
+            )
+        else:
+            event = _audit_event(
+                user=entities.domain_user,
+                ip=ip,
+                op=overrides.get("operation", random.choice(_AUDIT_OPERATIONS)),
+                # Self-service operations (registering an authenticator,
+                # resetting your own password) target the same principal that
+                # initiated them, which is exactly the pattern that makes this
+                # abuse blend in.
+                target_user=overrides.get("target_user", entities.domain_user),
+                now=now,
+                tenant_id=tenant_id,
+            )
 
         return LogEvent(
             raw=json.dumps(event),

@@ -1,0 +1,68 @@
+id: gift_card_fraud_m365
+name: Cloud Gift Card Fraud (Jingle Thief)
+description: >
+  Modeled on Unit 42's "Jingle Thief" campaign (CL-CRI-1032): a financially
+  motivated actor phishes Microsoft 365 credentials, then lives entirely in
+  the cloud tenant — no malware, no privilege escalation. The compromised
+  identity signs in from attacker infrastructure, mines SharePoint/OneDrive
+  for gift card issuance workflows, registers its own authenticator to
+  survive password resets, and phishes internally to widen the foothold
+  before issuing cards. Delays are seconds from scenario start.
+  Source: https://unit42.paloaltonetworks.com/cloud-based-gift-card-fraud-campaign
+steps:
+  # 1. Initial access: phishing mail lands, spoofing an M365 login portal.
+  - source: proofpoint_tap
+    delay: 0
+    jitter: 3
+    overrides: {event_type: messagesDelivered}
+
+  # 2. The victim clicks through to the counterfeit portal (permitted, not
+  #    blocked — credential harvesting succeeds).
+  - source: proofpoint_tap
+    delay: 25
+    jitter: 5
+    overrides: {event_type: clicksPermitted}
+
+  # 3. Harvested credentials replayed against M365 from attacker infra.
+  - source: azure_ad
+    delay: 70
+    jitter: 10
+    overrides:
+      log_type: SignInLogs
+      app: Microsoft Office 365
+      result_type: "0"
+
+  # 4. Cloud reconnaissance rather than privilege escalation — the campaign's
+  #    defining trait. SharePoint/OneDrive mined for gift card workflows.
+  - source: azure_ad
+    delay: 120
+    jitter: 15
+    overrides:
+      log_type: SignInLogs
+      app: SharePoint Online
+      result_type: "0"
+
+  # 5. Identity persistence: enroll an attacker-controlled authenticator so
+  #    MFA keeps succeeding even after a credential reset (T1556 / T1098.005).
+  - source: azure_ad
+    delay: 200
+    jitter: 20
+    overrides:
+      log_type: AuditLogs
+      operation: User registered security info
+
+  # 6. Lateral movement stays in email — internal phish from the now-trusted
+  #    account, spoofing IT/ServiceNow notifications.
+  - source: proofpoint_tap
+    delay: 320
+    jitter: 30
+    overrides: {event_type: messagesDelivered}
+
+  # 7. Fraud execution: the identity reaches the gift card issuance app.
+  - source: azure_ad
+    delay: 420
+    jitter: 30
+    overrides:
+      log_type: SignInLogs
+      app: My Apps
+      result_type: "0"
