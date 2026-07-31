@@ -284,3 +284,131 @@ async def test_duo_mfa_honors_application_override():
     data = json.loads((await source.generate_with_entities(
         ENTITIES, {"application": "GlobalProtect VPN"})).raw)
     assert data["application"]["name"] == "GlobalProtect VPN"
+
+
+# ── network detection / windows depth / AWS depth packs ────────────────────
+
+@pytest.mark.asyncio
+async def test_zeek_uses_entity_ips():
+    source = get_registry()["zeek"]
+    data = json.loads((await source.generate_with_entities(ENTITIES, {"log_type": "conn"})).raw)
+    assert data["_path"] == "conn"
+    assert data["id.orig_h"] == "10.10.5.5"
+    assert data["id.resp_h"] == "203.0.113.9"
+
+
+@pytest.mark.asyncio
+async def test_zeek_ssl_carries_ja3():
+    """JA3 is why ssl.log matters -- the client fingerprint survives domain
+    and certificate rotation."""
+    source = get_registry()["zeek"]
+    data = json.loads((await source.generate_with_entities(ENTITIES, {"log_type": "ssl"})).raw)
+    assert data["ja3"] and data["server_name"]
+
+
+@pytest.mark.asyncio
+async def test_suricata_signature_id_implies_an_alert():
+    """Naming a signature should be enough -- a caller shouldn't have to also
+    say event_type=alert to get the alert they asked for."""
+    source = get_registry()["suricata"]
+    data = json.loads((await source.generate_with_entities(
+        ENTITIES, {"signature_id": 2034647})).raw)
+    assert data["event_type"] == "alert"
+    assert data["alert"]["signature_id"] == 2034647
+    assert "Log4j" in data["alert"]["signature"]
+    assert data["src_ip"] == "10.10.5.5"
+    assert data["dest_ip"] == "203.0.113.9"
+
+
+@pytest.mark.asyncio
+async def test_powershell_script_block_uses_entities_and_flags_suspicious():
+    """4104 is raised to Warning (Level 3) when PowerShell's own heuristics
+    flag the block -- the field most script-block detections key on."""
+    source = get_registry()["windows_powershell"]
+    data = json.loads((await source.generate_with_entities(
+        ENTITIES, {"event_id": 4104, "suspicious": True})).raw)
+    assert data["EventID"] == 4104
+    assert data["Computer"] == "WIN-TESTHOST"
+    assert data["Level"] == 3
+    assert data["EventData"]["ScriptBlockText"]
+
+    benign = json.loads((await source.generate_with_entities(
+        ENTITIES, {"event_id": 4104, "suspicious": False})).raw)
+    assert benign["Level"] == 4
+
+
+@pytest.mark.asyncio
+async def test_powershell_honors_explicit_script_override():
+    source = get_registry()["windows_powershell"]
+    script = "Invoke-Mimikatz -DumpCreds"
+    data = json.loads((await source.generate_with_entities(
+        ENTITIES, {"event_id": 4104, "script": script})).raw)
+    assert data["EventData"]["ScriptBlockText"] == script
+
+
+@pytest.mark.asyncio
+async def test_amsi_detection_is_in_memory_not_a_file():
+    """The point of the AMSI source: the detection has no file on disk, which
+    is what distinguishes it from microsoft_defender's file-based events."""
+    source = get_registry()["windows_amsi"]
+    for _ in range(30):
+        data = json.loads((await source.generate_with_entities(
+            ENTITIES, {"event_id": 1116})).raw)
+        if data["EventData"]["Detection Source"] == "AMSI":
+            assert data["EventData"]["Path"].startswith("amsi:")
+            assert data["EventData"]["Script Content"]
+            assert data["Computer"] == "WIN-TESTHOST"
+            return
+    raise AssertionError("no AMSI-sourced detection produced in 30 attempts")
+
+
+@pytest.mark.asyncio
+async def test_amsi_honors_threat_and_content_overrides():
+    source = get_registry()["windows_amsi"]
+    data = json.loads((await source.generate_with_entities(ENTITIES, {
+        "event_id": 1116,
+        "threat_name": "HackTool:PowerShell/Mimikatz.A",
+        "script_content": "Invoke-Mimikatz -DumpCreds",
+    })).raw)
+    assert data["EventData"]["Threat Name"] == "HackTool:PowerShell/Mimikatz.A"
+    assert data["EventData"]["Script Content"] == "Invoke-Mimikatz -DumpCreds"
+
+
+@pytest.mark.asyncio
+async def test_guardduty_finding_uses_entities():
+    source = get_registry()["aws_guardduty"]
+    data = json.loads((await source.generate_with_entities(ENTITIES, {
+        "finding_type": "UnauthorizedAccess:IAMUser/InstanceCredentialExfiltration.OutsideAWS",
+    })).raw)
+    assert data["type"] == "UnauthorizedAccess:IAMUser/InstanceCredentialExfiltration.OutsideAWS"
+    assert data["resource"]["accessKeyDetails"]["userName"] == "jsmith"
+    assert data["service"]["action"]["awsApiCallAction"]["remoteIpDetails"]["ipAddressV4"] == "203.0.113.9"
+
+
+@pytest.mark.asyncio
+async def test_vpc_flow_uses_entity_ips_in_the_wire_line():
+    source = get_registry()["aws_vpc_flow"]
+    event = await source.generate_with_entities(ENTITIES, {"action": "REJECT", "dstport": 3389})
+    # Positional format: the parsed view and the raw line must agree.
+    assert event.structured["srcaddr"] == "10.10.5.5"
+    assert event.structured["dstaddr"] == "203.0.113.9"
+    assert event.structured["action"] == "REJECT"
+    assert event.structured["dstport"] == "3389"
+    fields = event.raw.split(" ")
+    assert fields[3] == "10.10.5.5" and fields[4] == "203.0.113.9"
+    assert fields[12] == "REJECT"
+
+
+@pytest.mark.asyncio
+async def test_vpc_flow_nodata_records_have_no_counters():
+    """AWS emits '-' rather than 0 when an interface saw no traffic; a
+    detection that assumes numeric counters breaks on these."""
+    source = get_registry()["aws_vpc_flow"]
+    for _ in range(200):
+        event = await source.generate()
+        if event.structured["log-status"] != "OK":
+            assert event.structured["packets"] == "-"
+            assert event.structured["bytes"] == "-"
+            assert event.structured["packets_int"] is None
+            return
+    raise AssertionError("no NODATA/SKIPDATA record produced in 200 attempts")
