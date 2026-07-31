@@ -215,6 +215,10 @@ Per source, opt-in, HTTP transport only (toggle in **HTTP settings** on the sour
 
 **Limits** — the destination's own ceilings are enforced, so an event that a real pipeline would drop fails here instead of reporting success: **5 MB** per event and **9.5 MB** per batch, measured pre-compression.
 
+**Windows sources** — per [Collect Windows Event Logs for Cortex XSIAM via Cribl](https://docs-cortex.paloaltonetworks.com/r/Cortex-XSIAM/Cortex-XSIAM-3.x-Documentation/Collect-Windows-Event-Logs-for-Cortex-XSIAM-via-Cribl), one content pack covers the Security, System, Application, PowerShell, Firewall and TaskScheduler channels, so those sources all present as `vendor: microsoft` / `product: windows` and land together in `microsoft_windows_raw`. Sysmon ships as its own pack and keeps `product: sysmon`.
+
+> ⚠️ **Emulation changes where events land.** The `vendor`/`product` headers select the destination dataset — the engine's own `xsiam_dataset` is not sent, and only drives correlation-rule generation and the Ingestion page. `microsoft_windows_raw`, `msft_azure_ad_raw` and friends are **real, populated datasets on a production tenant**, so turning emulation on for a Windows source mixes simulated events into genuine Windows telemetry. Enabling it logs a warning naming the destination dataset; check the **Ingestion** page first if you're pointing at a tenant you care about.
+
 Off by default, and off is a true no-op — byte-identical output to a source whose toggle was never touched.
 
 > Earlier versions stamped invented fields (`cribl_pipe`, `cribl_host`, `cribl_breaker`, `sourcetype`) into the body. No real Cribl worker sends those to XSIAM, so the emulated traffic diverged from the thing it was emulating; they've been removed.
@@ -327,7 +331,7 @@ This is a lab/testing tool; defaults assume it runs on a trusted network. Curren
 ## Development
 
 ```bash
-# Tests (276 passing: sources, transports HTTP/Syslog/WEC, API, scenarios, engine)
+# Tests (282 passing: sources, transports HTTP/Syslog/WEC, API, scenarios, engine)
 pip install -r engine/requirements.txt
 pytest tests/ -q
 pytest tests/ --cov=engine --cov-report=term-missing   # with coverage

@@ -39,6 +39,16 @@ CRIBL_MAX_BATCH_BYTES = int(9.5 * 1024 * 1024)  # 9.5 MB per batch
 # -- and says nothing useful for single-word ids. Only the exceptions are
 # listed; everything else falls back to the split.
 _VENDOR_PRODUCT = {
+    # Per "Collect Windows Event Logs for Cortex XSIAM via Cribl", one pack
+    # covers the Security, System, Application, PowerShell, Firewall and
+    # TaskScheduler channels -- they share vendor/product and all land in
+    # microsoft_windows_raw, rather than getting a dataset per channel.
+    "windows_security": ("microsoft", "windows"),
+    "windows_system": ("microsoft", "windows"),
+    "windows_application": ("microsoft", "windows"),
+    "windows_powershell": ("microsoft", "windows"),
+    # Sysmon ships as its own pack, so it keeps its own vendor/product.
+    "sysmon": ("microsoft", "sysmon"),
     "palo_alto_ngfw": ("paloaltonetworks", "ngfw"),
     "globalprotect_vpn": ("paloaltonetworks", "globalprotect"),
     "proxy_bluecoat": ("bluecoat", "proxysg"),
@@ -50,8 +60,6 @@ _VENDOR_PRODUCT = {
     "duo_mfa": ("cisco", "duo"),
     "crowdstrike_falcon": ("crowdstrike", "falcon"),
     "proofpoint_tap": ("proofpoint", "tap"),
-    "sysmon": ("microsoft", "sysmon"),
-    "windows_powershell": ("microsoft", "powershell"),
     "windows_amsi": ("microsoft", "defender_amsi"),
     "zeek": ("zeek", "network"),
     "suricata": ("oisf", "suricata"),
@@ -83,6 +91,22 @@ def _cribl_identifiers(meta: SourceMeta) -> dict[str, str]:
         "vendor": meta.cribl_vendor or vendor or source_id,
         "product": meta.cribl_product or product or source_id,
     }
+
+
+def cribl_routing_note(source_id: str) -> str:
+    """Where a Cribl-emulated source's events actually land, for the operator.
+
+    vendor/product decide the destination dataset, not this engine's
+    xsiam_dataset (which only drives correlation-rule generation and the
+    Ingestion view). That matters because several of these are real,
+    populated datasets on a production tenant: turning emulation on for a
+    Windows source delivers simulated events into the same
+    microsoft_windows_raw that holds genuine Windows telemetry.
+    """
+    vendor, product = _VENDOR_PRODUCT.get(source_id, (None, None))
+    if vendor is None:
+        vendor, _, product = source_id.partition("_")
+    return f"{vendor}_{product}_raw"
 
 
 def _cribl_envelope(event: Any, meta: SourceMeta) -> dict[str, Any]:

@@ -5,6 +5,9 @@ from fastapi import APIRouter, HTTPException
 from api.models import SourceInfo, SourceConfigPatch, ControlResponse
 from config.settings import settings
 from main import get_engine
+from utils.logger import get_logger
+
+logger = get_logger(__name__)
 
 router = APIRouter(prefix="/api/sources", tags=["sources"])
 
@@ -94,6 +97,19 @@ async def patch_source_config(source_id: str, patch: SourceConfigPatch) -> Sourc
         state.http_api_key = patch.http_api_key
     if patch.cribl_emulation is not None:
         state.cribl_emulation = patch.cribl_emulation
+        if patch.cribl_emulation:
+            # Under emulation the vendor/product headers decide the
+            # destination dataset, not this source's xsiam_dataset. Several of
+            # those are real datasets on a production tenant, so log where the
+            # traffic will actually land rather than leaving it implicit.
+            from transports.http_transport import cribl_routing_note
+            logger.warning({
+                "event": "cribl_emulation_enabled",
+                "source": source_id,
+                "routes_to": cribl_routing_note(source_id),
+                "note": "vendor/product headers select the dataset; if that dataset "
+                        "already holds real telemetry, simulated events mix into it",
+            })
     if patch.cribl_source_identifier is not None:
         state.cribl_source_identifier = patch.cribl_source_identifier
     if patch.cribl_vendor is not None:

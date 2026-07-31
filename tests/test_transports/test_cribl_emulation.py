@@ -194,3 +194,35 @@ def test_off_raw_line_is_a_bare_prefixed_string():
     body = _build_body("<134>sample line", _meta(http_log_type="raw")).decode()
     assert body.startswith('simulated_log_source="palo_alto_ngfw" ')
     assert "collector_ms" not in body
+
+
+# ── Windows channels share one pack ─────────────────────────────────────────
+
+@pytest.mark.parametrize("source_id", [
+    "windows_security", "windows_system", "windows_application", "windows_powershell",
+])
+def test_windows_channels_share_vendor_product(source_id):
+    """Per "Collect Windows Event Logs for Cortex XSIAM via Cribl", a single
+    pack covers the Security, System, Application, PowerShell, Firewall and
+    TaskScheduler channels -- they share vendor/product and land together in
+    microsoft_windows_raw rather than getting a dataset per channel."""
+    headers = HTTPTransport()._build_headers(_meta(cribl_emulation=True, source_id=source_id))
+    assert headers["vendor"] == "microsoft"
+    assert headers["product"] == "windows"
+
+
+def test_sysmon_is_its_own_pack_not_folded_into_windows():
+    headers = HTTPTransport()._build_headers(_meta(cribl_emulation=True, source_id="sysmon"))
+    assert headers["vendor"] == "microsoft"
+    assert headers["product"] == "sysmon"
+
+
+def test_routing_note_reports_the_real_destination_dataset():
+    """The destination dataset comes from vendor/product, not from the
+    source's xsiam_dataset -- which is why enabling emulation can deliver
+    into a tenant's real telemetry."""
+    from transports.http_transport import cribl_routing_note
+    assert cribl_routing_note("windows_security") == "microsoft_windows_raw"
+    assert cribl_routing_note("windows_powershell") == "microsoft_windows_raw"
+    assert cribl_routing_note("sysmon") == "microsoft_sysmon_raw"
+    assert cribl_routing_note("acme_widget") == "acme_widget_raw"
