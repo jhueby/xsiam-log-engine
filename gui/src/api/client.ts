@@ -78,6 +78,10 @@ export interface TransportConfig {
   wec_subscription_url: string
   tls_client_cert_path: string  // read-only; set by /api/certs/pfx
   tls_client_key_path: string
+  // Diverts every source to a parallel *_sim_raw dataset, leaving the real
+  // vendor datasets untouched.
+  simulation_mode: boolean
+  simulation_suffix: string
 }
 
 export interface PfxUploadResult {

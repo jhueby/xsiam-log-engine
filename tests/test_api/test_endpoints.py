@@ -173,3 +173,25 @@ async def test_control_start_stop_all(client):
 async def test_control_reload(client):
     resp = await client.post("/api/control/reload")
     assert resp.status_code == 200
+
+
+@pytest.mark.asyncio
+async def test_simulation_mode_round_trips_through_config(client):
+    from config.settings import settings
+    original = (settings.simulation_mode, settings.simulation_suffix)
+    try:
+        resp = await client.put("/api/config", json={"simulation_mode": True, "simulation_suffix": "demo"})
+        assert resp.status_code == 200
+        assert resp.json()["simulation_mode"] is True
+        assert resp.json()["simulation_suffix"] == "demo"
+
+        # The toggle must actually move where sources point, not just persist.
+        resp = await client.get("/api/sources/okta")
+        assert resp.json()["xsiam_dataset"] == "okta_sso_demo_raw"
+
+        resp = await client.put("/api/config", json={"simulation_mode": False})
+        assert resp.json()["simulation_mode"] is False
+        resp = await client.get("/api/sources/okta")
+        assert resp.json()["xsiam_dataset"] == "okta_sso_raw"
+    finally:
+        settings.simulation_mode, settings.simulation_suffix = original

@@ -52,6 +52,13 @@ class Settings(BaseSettings):
     # set this to turn hostname + chain verification on.
     tls_ca_cert_path: str = ""
 
+    # Simulation mode. Off by default: sources target the canonical vendor
+    # datasets so an empty tenant gets data where a real deployment would put
+    # it. Turn this on to divert everything into parallel *_sim_raw datasets
+    # and leave the originals untouched.
+    simulation_mode: bool = False
+    simulation_suffix: str = "sim"
+
     # Engine
     engine_api_port: int = 8080
     engine_default_eps: float = 10.0

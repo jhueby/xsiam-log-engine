@@ -106,6 +106,34 @@ export default function ConfigPanel({ config, onSaved }: Props) {
       </section>
 
       <section>
+        <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 border-b border-gray-200 dark:border-gray-800 pb-2">Simulation Mode</h3>
+        <label className="flex items-start gap-2 text-sm text-gray-700 dark:text-gray-300 cursor-pointer">
+          <input
+            type="checkbox"
+            className="mt-1"
+            checked={form.simulation_mode}
+            onChange={e => set('simulation_mode', e.target.checked)}
+          />
+          <span>
+            Divert all sources to <code className="font-mono">*_{form.simulation_suffix || 'sim'}_raw</code> datasets
+            <span className="block text-xs text-gray-500 mt-1 leading-relaxed max-w-2xl">
+              Off (default), sources write to the canonical vendor datasets
+              (<code className="font-mono">okta_sso_raw</code>, <code className="font-mono">microsoft_windows_raw</code>)
+              so an empty tenant gets data where a real deployment would put it. On, every dataset gets
+              a suffix and the originals are left untouched — useful against a tenant that already
+              holds real telemetry. Note the suffixed product no longer matches the tenant's built-in
+              parser, so diverted data lands unparsed.
+            </span>
+          </span>
+        </label>
+        {form.simulation_mode && (
+          <div className="mt-3 max-w-xs">
+            <Field label="Suffix" value={form.simulation_suffix} onChange={v => set('simulation_suffix', v)} placeholder="sim" />
+          </div>
+        )}
+      </section>
+
+      <section>
         <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3 border-b border-gray-200 dark:border-gray-800 pb-2">WEC Client Certificate</h3>
         {(form.tls_client_cert_path) && (
           <div className="flex items-center gap-2 text-xs text-green-600 dark:text-green-400 mb-3">

@@ -41,6 +41,8 @@ async def get_config() -> TransportConfig:
         wec_subscription_url=settings.wec_subscription_url,
         tls_client_cert_path=settings.tls_client_cert_path,
         tls_client_key_path=settings.tls_client_key_path,
+        simulation_mode=settings.simulation_mode,
+        simulation_suffix=settings.simulation_suffix,
     )
 
 
@@ -81,6 +83,15 @@ async def update_config(update: TransportConfigUpdate) -> TransportConfig:
     if update.wec_subscription_url is not None:
         settings.wec_subscription_url = update.wec_subscription_url
         env_updates["WEC_SUBSCRIPTION_URL"] = update.wec_subscription_url
+    if update.simulation_mode is not None:
+        settings.simulation_mode = update.simulation_mode
+        env_updates["SIMULATION_MODE"] = str(update.simulation_mode).lower()
+        logger.info({"event": "simulation_mode_changed", "enabled": update.simulation_mode,
+                     "note": "datasets diverted to *_sim_raw" if update.simulation_mode
+                             else "datasets restored to canonical vendor names"})
+    if update.simulation_suffix is not None:
+        settings.simulation_suffix = update.simulation_suffix
+        env_updates["SIMULATION_SUFFIX"] = update.simulation_suffix
 
     if env_updates:
         try:

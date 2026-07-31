@@ -21,6 +21,7 @@ Use it to exercise XSIAM/XDR ingestion, validate parsing rules, demo dashboards,
 - [Configuration](#configuration)
 - [WEC setup](#wec-setup)
 - [XSIAM parsing rules](#xsiam-parsing-rules)
+- [Simulation mode](#simulation-mode)
 - [Attack scenarios](#attack-scenarios)
 - [GUI](#gui)
 - [API reference](#api-reference)
@@ -143,6 +144,8 @@ All settings load from `.env` (see [`.env.example`](.env.example)). They can als
 | `TLS_CLIENT_CERT_PATH` | WEC/syslog client cert — set automatically by `.pfx` upload | — |
 | `TLS_CLIENT_KEY_PATH` | WEC/syslog client key — set automatically by `.pfx` upload | — |
 | `TLS_CA_CERT_PATH` | CA bundle to verify the BrokerVM's server cert (WEC/syslog-TLS). Unset trusts it with no verification — see [Security](#security) | — |
+| `SIMULATION_MODE` | Divert every source to a parallel `*_<suffix>_raw` dataset, leaving the real vendor datasets untouched | `false` |
+| `SIMULATION_SUFFIX` | Suffix used when `SIMULATION_MODE` is on | `sim` |
 | `ENGINE_API_PORT` | Engine listen port | `8080` |
 | `ENGINE_DEFAULT_EPS` | Global default events/sec for new sources | `10` |
 | `ENGINE_LOG_LEVEL` | `DEBUG` / `INFO` / `WARNING` / `ERROR` | `INFO` |
@@ -220,11 +223,27 @@ Per source, opt-in, HTTP transport only (toggle in **HTTP settings** on the sour
 
 **Windows sources** — per [Collect Windows Event Logs for Cortex XSIAM via Cribl](https://docs-cortex.paloaltonetworks.com/r/Cortex-XSIAM/Cortex-XSIAM-3.x-Documentation/Collect-Windows-Event-Logs-for-Cortex-XSIAM-via-Cribl), one content pack covers the Security, System, Application, PowerShell, Firewall and TaskScheduler channels, so those sources all present as `vendor: microsoft` / `product: windows` and land together in `microsoft_windows_raw`. Sysmon ships as its own pack and keeps `product: sysmon`.
 
-> ⚠️ **Aim at an empty tenant.** Sources deliberately target the canonical vendor datasets, so on a tenant that already carries real telemetry your simulated events are interleaved with it. Enabling emulation logs a warning naming the destination dataset, and pushing a correlation rule warns when the target already holds events from another source. Check the **Ingestion** page before pointing this at a tenant you care about.
+> ⚠️ **Aim at an empty tenant, or turn on simulation mode.** Sources deliberately target the canonical vendor datasets, so on a tenant that already carries real telemetry your simulated events are interleaved with it. Enable [Simulation mode](#simulation-mode) to divert everything to `*_sim_raw` instead. Pushing a correlation rule also warns when the target dataset already holds events from another source; the **Ingestion** page shows the full picture.
 
 Off by default, and off is a true no-op — byte-identical output to a source whose toggle was never touched.
 
 > Earlier versions stamped invented fields (`cribl_pipe`, `cribl_host`, `cribl_breaker`, `sourcetype`) into the body. No real Cribl worker sends those to XSIAM, so the emulated traffic diverged from the thing it was emulating; they've been removed.
+
+### Simulation mode
+
+Off by default: sources write to the canonical vendor datasets so an empty tenant gets data where a real deployment would put it, and its built-in parsers and content packs apply. Against a tenant that already holds real telemetry that is the wrong shape — so turn **Simulation mode** on (Configuration page, or `SIMULATION_MODE=true`) and every source is diverted:
+
+| | Simulation off | Simulation on |
+|---|---|---|
+| `okta` | `okta_sso_raw` | `okta_sso_sim_raw` |
+| `windows_security` | `microsoft_windows_raw` | `microsoft_windows_sim_raw` |
+| Cribl `product` header | `sso` | `sso_sim` |
+
+The suffix lands on the *product*, not the vendor, so the Cribl `vendor`/`product` headers move with it — that matters because those headers are what actually select the destination dataset. Changing only the engine's own dataset name would relabel without redirecting anything. Correlation rules and the copyable parsing rule follow the same value, so all three stay consistent.
+
+Verified against a live tenant: 16 of 34 sources target an existing dataset with the toggle off, and 0 with it on.
+
+Trade-off: a suffixed product no longer matches the tenant's built-in parser for that source, so diverted data lands unparsed. That is the cost of leaving the originals untouched, which is why this is opt-in rather than the default. Set `SIMULATION_SUFFIX` to use something other than `sim`.
 
 ---
 
@@ -334,7 +353,7 @@ This is a lab/testing tool; defaults assume it runs on a trusted network. Curren
 ## Development
 
 ```bash
-# Tests (283 passing: sources, transports HTTP/Syslog/WEC, API, scenarios, engine)
+# Tests (292 passing: sources, transports HTTP/Syslog/WEC, API, scenarios, engine)
 pip install -r engine/requirements.txt
 pytest tests/ -q
 pytest tests/ --cov=engine --cov-report=term-missing   # with coverage

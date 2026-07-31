@@ -15,9 +15,14 @@ import { ChevronDown, ChevronUp, Copy, Check, AlertTriangle } from 'lucide-react
 import { useToast } from '../hooks/useToast'
 import { relativeTime, absoluteTime } from '../utils/time'
 
-const BASE_RULE = '[INGEST:vendor="log", product="sim", target_dataset="log_sim_raw", no_hit=drop]'
-function makeParsingRule(sourceId: string) {
-  return `${BASE_RULE}filter simulated_log_source = "${sourceId}";`
+// Targets the source's effective dataset rather than a fixed one, so the rule
+// follows the canonical vendor dataset -- and the diverted *_sim_raw when
+// simulation mode is on.
+function makeParsingRule(sourceId: string, dataset: string) {
+  const [vendor, ...rest] = dataset.replace(/_raw$/, '').split('_')
+  const product = rest.join('_') || vendor
+  return `[INGEST:vendor="${vendor}", product="${product}", target_dataset="${dataset}", no_hit=drop]`
+    + `filter simulated_log_source = "${sourceId}";`
 }
 
 const TRANSPORT_COLORS: Record<string, string> = {
@@ -413,7 +418,7 @@ function HttpSettings({ source, onUpdate }: { source: SourceInfo; onUpdate: () =
         {saved && <span className="text-xs text-green-600 dark:text-green-400">Saved</span>}
       </div>
 
-      <ParsingRuleBlock sourceId={source.id} />
+      <ParsingRuleBlock sourceId={source.id} dataset={source.xsiam_dataset} />
       <CorrelationRuleBlock sourceId={source.id} />
     </div>
   )
@@ -542,9 +547,9 @@ function CorrelationRuleBlock({ sourceId }: { sourceId: string }) {
   )
 }
 
-function ParsingRuleBlock({ sourceId }: { sourceId: string }) {
+function ParsingRuleBlock({ sourceId, dataset }: { sourceId: string; dataset: string }) {
   const [copied, setCopied] = useState(false)
-  const rule = makeParsingRule(sourceId)
+  const rule = makeParsingRule(sourceId, dataset)
   const { show } = useToast()
   const copy = async () => {
     try {

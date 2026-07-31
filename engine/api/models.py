@@ -61,6 +61,10 @@ class TransportConfig(BaseModel):
     wec_subscription_url: str
     tls_client_cert_path: str  # read-only; populated by /api/certs/pfx
     tls_client_key_path: str
+    # When on, every source's dataset is diverted to a parallel *_sim_raw so
+    # the real vendor datasets stay untouched.
+    simulation_mode: bool
+    simulation_suffix: str
 
 
 class TransportConfigUpdate(BaseModel):
@@ -75,7 +79,8 @@ class TransportConfigUpdate(BaseModel):
     brokervm_syslog_proto: Literal["udp", "tcp", "tls"] | None = None
     brokervm_wec_port: int | None = None
     wec_subscription_url: str | None = None
-
+    simulation_mode: bool | None = None
+    simulation_suffix: str | None = None
 
 
 class StatsResponse(BaseModel):

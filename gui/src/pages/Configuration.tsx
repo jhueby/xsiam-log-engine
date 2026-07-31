@@ -18,6 +18,8 @@ const EMPTY_CONFIG: TransportConfig = {
   wec_subscription_url: '',
   tls_client_cert_path: '',
   tls_client_key_path: '',
+  simulation_mode: false,
+  simulation_suffix: 'sim',
 }
 
 export default function Configuration() {
