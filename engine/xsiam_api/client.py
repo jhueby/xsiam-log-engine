@@ -31,6 +31,7 @@ CORRELATIONS_GET_PATH = "/public_api/v1/correlations/get"
 CORRELATIONS_INSERT_PATH = "/public_api/v1/correlations/insert"
 CORRELATIONS_DELETE_PATH = "/public_api/v1/correlations/delete"
 INCIDENTS_PATH = "/public_api/v1/incidents/get_incidents/"
+DATASETS_PATH = "/public_api/v1/xql/get_datasets"
 
 # Internal severity word -> Cortex severity enum. The API rejects the plain
 # words this engine used to send ("informational"); confirmed valid enum
@@ -141,6 +142,26 @@ def _to_api(rule: dict[str, Any]) -> dict[str, Any]:
         "mapping_strategy": "CUSTOM",
         "action": "ALERTS",
         "lookup_mapping": [],
+    }
+
+
+def _dataset_from_api(raw: dict[str, Any]) -> dict[str, Any]:
+    """Normalize one dataset row from /xql/get_datasets.
+
+    The tenant returns display-cased, space-separated keys ("Dataset Name",
+    "Total Events") rather than the snake_case the rest of this API uses.
+
+    Note "Last Updated" is day-granular (midnight UTC), so it cannot answer
+    "did the events I just sent land" -- total_events is the signal that
+    actually moves. Callers shouldn't present last_updated as a live
+    ingestion indicator.
+    """
+    return {
+        "name": raw.get("Dataset Name") or "",
+        "type": raw.get("Type") or "",
+        "total_events": raw.get("Total Events") or 0,
+        "total_size_bytes": raw.get("Total Size Stored") or 0,
+        "last_updated_ms": raw.get("Last Updated"),
     }
 
 
@@ -293,6 +314,15 @@ class XsiamApiClient:
             "POST", CORRELATIONS_DELETE_PATH,
             {"request_data": {"filters": [{"field": "name", "operator": "eq", "value": name}]}},
         )
+
+    async def list_datasets(self) -> list[dict[str, Any]]:
+        """Every dataset on the tenant. Unlike correlations/get this returns
+        the full set in one call (no search window), and the reply is a bare
+        list rather than an {objects: [...]} wrapper."""
+        reply = await self._request("POST", DATASETS_PATH, {"request_data": {}})
+        if not isinstance(reply, list):
+            return []
+        return [_dataset_from_api(row) for row in reply if isinstance(row, dict)]
 
     async def probe_incidents(self) -> None:
         """Auth probe against a broadly-permissioned endpoint — distinguishes

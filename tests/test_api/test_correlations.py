@@ -17,6 +17,7 @@ from config.settings import settings
 from xsiam_api import xsiam_api_client
 from xsiam_api.client import (
     CORRELATIONS_DELETE_PATH,
+    DATASETS_PATH,
     CORRELATIONS_GET_PATH,
     CORRELATIONS_INSERT_PATH,
     INCIDENTS_PATH,
@@ -27,6 +28,7 @@ CORR_GET_URL = API_BASE + CORRELATIONS_GET_PATH
 CORR_INSERT_URL = API_BASE + CORRELATIONS_INSERT_PATH
 CORR_DELETE_URL = API_BASE + CORRELATIONS_DELETE_PATH
 INCIDENTS_URL = API_BASE + INCIDENTS_PATH
+DATASETS_URL = API_BASE + DATASETS_PATH
 
 OKTA_RULE = {
     "name": "[LogSim] okta",
@@ -328,8 +330,11 @@ async def test_insert_partial_failure_is_not_reported_as_success(client):
         "errors": [{"index": 0, "status": "Failed to create correlation rule due to: Invalid severity: NOPE"}],
     }))
 
+    # 400, not 502: a rejected rule is a client-side problem the operator can
+    # fix, whether the tenant signals it with an HTTP 400 or with a 200 whose
+    # errors list is populated. Both go through the same mapping.
     resp = await client.post("/api/correlations/okta")
-    assert resp.status_code == 502
+    assert resp.status_code == 400
     assert "Invalid severity" in resp.json()["detail"]
 
 
@@ -451,3 +456,80 @@ async def test_validate_unconfigured(client, monkeypatch):
     assert len(data["checks"]) == 1
     assert data["checks"][0]["name"] == "configured"
     assert data["checks"][0]["ok"] is False
+
+
+# ── dataset pre-flight on push ─────────────────────────────────────────────
+
+def _mock_datasets(names):
+    return respx.post(DATASETS_URL).mock(return_value=Response(200, json={
+        "reply": [{"Dataset Name": n, "Type": "USER", "Total Events": 1,
+                   "Total Size Stored": 1, "Last Updated": 1785369600000} for n in names]
+    }))
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_push_warns_when_target_dataset_is_absent(client):
+    """A rule whose dataset doesn't exist is accepted by XSIAM and then
+    silently never fires -- indistinguishable from 'works but nothing
+    matched yet'."""
+    _mock_list([])
+    respx.post(CORR_DELETE_URL).mock(return_value=Response(200, json={"objects_count": 0, "objects": []}))
+    respx.post(CORR_INSERT_URL).mock(return_value=Response(200, json={"added_objects": [{"id": 1}], "errors": []}))
+    _mock_datasets(["some_other_dataset"])
+
+    resp = await client.post("/api/correlations/okta")
+    assert resp.status_code == 200          # still a success -- not a rejection
+    body = resp.json()
+    assert body["ok"] is True
+    assert "okta_system_log_raw" in body["warning"]
+    assert "cannot match" in body["warning"]
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_push_has_no_warning_when_dataset_exists(client):
+    _mock_list([])
+    respx.post(CORR_DELETE_URL).mock(return_value=Response(200, json={"objects_count": 0, "objects": []}))
+    respx.post(CORR_INSERT_URL).mock(return_value=Response(200, json={"added_objects": [{"id": 1}], "errors": []}))
+    _mock_datasets(["okta_system_log_raw"])
+
+    body = (await client.post("/api/correlations/okta")).json()
+    assert body["warning"] is None
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_dataset_check_failure_never_breaks_a_successful_push(client):
+    """The check is advisory. If listing datasets fails, the push that already
+    succeeded must still report success rather than turning into an error."""
+    _mock_list([])
+    respx.post(CORR_DELETE_URL).mock(return_value=Response(200, json={"objects_count": 0, "objects": []}))
+    respx.post(CORR_INSERT_URL).mock(return_value=Response(200, json={"added_objects": [{"id": 1}], "errors": []}))
+    respx.post(DATASETS_URL).mock(return_value=Response(500, text="datasets api down"))
+
+    resp = await client.post("/api/correlations/okta")
+    assert resp.status_code == 200
+    assert resp.json()["ok"] is True
+    assert resp.json()["warning"] is None
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_rule_rejected_by_tenant_reports_400_not_502(client):
+    """A tenant 400 means it rejected this specific rule (XQL validation),
+    which the operator can fix -- reporting 502 Bad Gateway blames the
+    upstream instead. Real case: the target dataset exists but is populated
+    by genuine ingestion, so it has no simulated_log_source field for the
+    generated query to filter on."""
+    _mock_list([])
+    respx.post(CORR_DELETE_URL).mock(return_value=Response(200, json={"objects_count": 0, "objects": []}))
+    respx.post(CORR_INSERT_URL).mock(return_value=Response(400, json={
+        "added_objects": [], "updated_objects": [],
+        "errors": [{"index": 0, "status": "Failed to create correlation rule due to: "
+                                          "XQL query is invalid: unknown field simulated_log_source."}],
+    }))
+
+    resp = await client.post("/api/correlations/okta")
+    assert resp.status_code == 400
+    assert "simulated_log_source" in resp.json()["detail"]

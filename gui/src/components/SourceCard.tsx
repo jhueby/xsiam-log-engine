@@ -406,6 +406,7 @@ function CorrelationRuleBlock({ sourceId }: { sourceId: string }) {
   const [copied, setCopied] = useState(false)
   const [busy, setBusy] = useState(false)
   const [confirmOverwrite, setConfirmOverwrite] = useState(false)
+  const [warning, setWarning] = useState('')
 
   useEffect(() => {
     previewCorrelationRule(sourceId).then(r => setRule(r.data)).catch(() => {})
@@ -421,6 +422,10 @@ function CorrelationRuleBlock({ sourceId }: { sourceId: string }) {
     try {
       const r = await applyCorrelationRule(sourceId, overwrite)
       show(r.data.message, 'success')
+      // The push succeeded but the rule can't match yet — surfaced
+      // separately so it isn't mistaken for a failure, and kept on screen
+      // rather than only in a toast that disappears.
+      setWarning(r.data.warning ?? '')
       setConfirmOverwrite(false)
     } catch (err: any) {
       if (err?.response?.status === 409) setConfirmOverwrite(true)
@@ -433,6 +438,7 @@ function CorrelationRuleBlock({ sourceId }: { sourceId: string }) {
   const remove = async () => {
     setBusy(true)
     setConfirmOverwrite(false)
+    setWarning('')
     try {
       const r = await deleteCorrelationRule(sourceId)
       show(r.data?.message ?? 'Correlation rule removed', 'info')
@@ -471,6 +477,12 @@ function CorrelationRuleBlock({ sourceId }: { sourceId: string }) {
       <pre className="text-xs font-mono text-gray-600 dark:text-gray-400 whitespace-pre-wrap break-all leading-relaxed bg-gray-50 dark:bg-gray-800/50 rounded p-2">
         {rule.xql_query}
       </pre>
+      {warning && (
+        <div className="flex items-start gap-1.5 text-xs text-yellow-700 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-300 dark:border-yellow-700/50 rounded p-2">
+          <AlertTriangle size={11} className="flex-shrink-0 mt-0.5" />
+          <span>{warning}</span>
+        </div>
+      )}
       {confirmOverwrite ? (
         <div className="flex items-center gap-2 text-xs text-yellow-700 dark:text-yellow-300">
           <AlertTriangle size={11} className="flex-shrink-0" />

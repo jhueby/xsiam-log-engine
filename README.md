@@ -170,6 +170,13 @@ Expand a source's **HTTP settings** on its card to copy a ready-made ingest rule
 
 Add it under **Settings → XDR Data Management → Parsers → New Parser** in your XSIAM tenant.
 
+> **Generated correlation rules only work against datasets this engine populates.** They filter on
+> `simulated_log_source`, a field the engine injects — so pointing a source at a dataset fed by real
+> ingestion (e.g. a genuine `msft_azure_ad_raw`) makes XSIAM reject the rule outright with
+> `unknown field simulated_log_source`. Give simulated traffic its own dataset via the parsing rule
+> above rather than mixing it into a production one. The **Ingestion** page shows which datasets
+> each source is actually targeting.
+
 ### Cribl Stream emulation
 
 Per source, opt-in, HTTP transport only (toggle in **HTTP settings** on the source card). Stamps events with Cribl Stream-style metadata — `cribl_pipe`, `cribl_host`, `cribl_breaker`, `_time`, `source`, `sourcetype` — as if the event had been routed through a Cribl worker before reaching XSIAM, without an actual Cribl instance anywhere. Off by default; off is a no-op (byte-identical output to a source with the toggle never touched).
@@ -209,7 +216,8 @@ about.
 
 - **Dashboard** — live aggregate stats (EPS, sent, errors, per-transport counts), transport health, Start/Stop All (Stop All is two-click to confirm), and first-run / circuit-breaker banners.
 - **Sources** — searchable, tag-filterable grid. Per card: enable toggle, log-scale EPS slider with numeric entry, transport selector, HTTP log-type/compression/API-key, and the copyable parsing rule.
-- **Correlation Rules** — engine-managed XSIAM correlation rules (`[LogSim]` prefix): tenant state, per-row remove, Remove All. Rules are pushed/removed per source from its card; the backend always lists tenant rules first, so an existing rule is never silently overwritten (explicit overwrite confirm) and removals of absent rules fail cleanly.
+- **Correlation Rules** — engine-managed XSIAM correlation rules (`[LogSim]` prefix): tenant state, per-row remove, Remove All. Rules are pushed/removed per source from its card; the backend always lists tenant rules first, so an existing rule is never silently overwritten (explicit overwrite confirm) and removals of absent rules fail cleanly. On push, the target dataset is checked against the tenant and a warning is surfaced if it doesn't exist yet — the rule is accepted by XSIAM either way, but can't match anything until events land there.
+- **Ingestion** — per-source view of what the tenant actually holds: target dataset, whether it exists, and its event count. A transport reporting success only means XSIAM accepted the request; it says nothing about whether the event was parsed and stored, so a source whose dataset is missing has been "sending" into nowhere.
 - **Scenarios** — run a shipped attack scenario, watch each step transition pending → fired/error in real time, and cancel an in-flight run.
 - **Configuration** — XSIAM + BrokerVM settings, the XSIAM Public API credentials (with a staged **Test connection** probe), and the `.pfx` upload.
 - **Log Viewer** — live SSE tail with pause (buffers while paused), text search, success/error filter, raw/pretty toggle, and NDJSON download.
@@ -234,6 +242,8 @@ All routes are under `/api`. When `ENGINE_API_TOKEN` is set, send it as the `X-E
 | PUT | `/api/config` | Update config (persists to `.env`, live reload) |
 | POST | `/api/config/validate` | Staged probe of the XSIAM Public API settings |
 | GET | `/api/correlations` | List engine-managed correlation rules on the tenant (`?all=true` for every rule) |
+| GET | `/api/datasets` | List every dataset on the tenant (name, type, event count, size) |
+| GET | `/api/datasets/ingestion` | Per-source ingestion status: target dataset, whether it exists, tenant event count |
 | GET | `/api/correlations/{id}/preview` | Generated rule for a source (local, no tenant call) |
 | POST | `/api/correlations/{id}` | Push a source's rule (list-first; 409 unless `?overwrite=true`) |
 | DELETE | `/api/correlations/{id}` | Remove a source's rule (404 if absent on tenant) |
@@ -276,7 +286,7 @@ This is a lab/testing tool; defaults assume it runs on a trusted network. Curren
 ## Development
 
 ```bash
-# Tests (214 passing: sources, transports HTTP/Syslog/WEC, API, scenarios, engine)
+# Tests (224 passing: sources, transports HTTP/Syslog/WEC, API, scenarios, engine)
 pip install -r engine/requirements.txt
 pytest tests/ -q
 pytest tests/ --cov=engine --cov-report=term-missing   # with coverage
@@ -294,7 +304,7 @@ cd gui && npm install && npm run dev
 
 ```
 engine/
-  api/            FastAPI app, routers (sources, config, stats, control, diagnostics, certs, correlations, scenarios), models
+  api/            FastAPI app, routers (sources, config, stats, control, diagnostics, certs, correlations, scenarios, datasets), models
   sources/        one file per log source (auto-discovered)
   transports/     http, syslog, wec
   xsiam_api/      XSIAM public-API client + rule generation (correlation rules)
@@ -303,7 +313,7 @@ engine/
   utils/          rate limiter, diagnostics buffer, faker helpers, logger
 gui/
   src/
-    pages/        Dashboard, Sources, CorrelationRules, Scenarios, Configuration, LogViewer, Diagnostics
+    pages/        Dashboard, Sources, CorrelationRules, Ingestion, Scenarios, Configuration, LogViewer, Diagnostics
     components/   SourceCard, SourceGrid, StatsBar, LogViewer, ConfigPanel, ErrorBoundary, Toast, ThemeToggle, …
     hooks/        useSSE, useToast
     theme.ts      5-theme palette definitions + applyTheme()

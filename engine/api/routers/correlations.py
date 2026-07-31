@@ -82,11 +82,51 @@ async def push_correlation_rule(source_id: str, overwrite: bool = False) -> Corr
     except XsiamApiNotConfigured as e:
         raise HTTPException(status_code=400, detail=e.detail)
     except XsiamApiError as e:
-        raise HTTPException(status_code=502, detail=e.detail)
+        # A 400 from the tenant means it rejected *this rule* (XQL validation,
+        # bad enum), which is a client-side problem -- reporting it as 502 Bad
+        # Gateway blames the upstream for a rule the operator can fix. The most
+        # common cause: the target dataset exists but is populated by real
+        # ingestion, so it has no simulated_log_source field for the generated
+        # query to filter on.
+        status = 400 if e.status == 400 else 502
+        raise HTTPException(status_code=status, detail=e.detail)
 
     action = "updated" if name in existing else "created"
     logger.info({"event": "correlation_rule_pushed", "source": source_id, "action": action})
-    return CorrelationApplyResponse(ok=True, message=f"Rule '{name}' {action}", rule=_to_info(rule))
+    return CorrelationApplyResponse(
+        ok=True,
+        message=f"Rule '{name}' {action}",
+        rule=_to_info(rule),
+        warning=await _dataset_warning(rule.get("dataset", "")),
+    )
+
+
+async def _dataset_warning(dataset: str) -> str | None:
+    """Flag a rule that queries a dataset the tenant doesn't have.
+
+    A correlation rule whose `dataset = ...` doesn't exist is accepted by
+    XSIAM and then silently never fires, which is indistinguishable from
+    "the rule works but nothing matched yet". Deliberately a warning rather
+    than a rejection: the dataset only appears once the first events land,
+    so pushing the rule first is a legitimate order of operations.
+
+    Failing to check must never block the push that already succeeded, so
+    any error here degrades to no warning.
+    """
+    if not dataset:
+        return None
+    try:
+        names = {d["name"] for d in await xsiam_api_client.list_datasets()}
+    except Exception as exc:  # noqa: BLE001 - advisory only, never fatal
+        logger.warning({"event": "dataset_check_failed", "dataset": dataset, "error": str(exc)})
+        return None
+    if dataset in names:
+        return None
+    return (
+        f"Dataset '{dataset}' does not exist on this tenant yet, so this rule "
+        f"cannot match anything. It will start working once events land in that "
+        f"dataset — check the parsing rule that routes simulated_log_source to it."
+    )
 
 
 @router.delete("/{source_id}", response_model=ControlResponse)

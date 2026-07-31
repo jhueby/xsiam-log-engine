@@ -110,6 +110,33 @@ class CorrelationApplyResponse(BaseModel):
     ok: bool
     message: str
     rule: CorrelationRuleInfo
+    # Non-fatal: set when the rule's target dataset doesn't exist on the
+    # tenant yet, which means the rule is live but can never match. Not an
+    # error — pushing a rule before the first events land is a legitimate
+    # order of operations, and the dataset appears once data arrives.
+    warning: str | None = None
+
+
+class DatasetInfo(BaseModel):
+    name: str
+    type: str = ""
+    total_events: int = 0
+    total_size_bytes: int = 0
+    # Day-granular (midnight UTC) as reported by the tenant — useful for "is
+    # this dataset stale", not for "did my last batch land".
+    last_updated: str | None = None
+
+
+class SourceIngestionInfo(BaseModel):
+    source_id: str
+    display_name: str
+    dataset: str
+    exists: bool
+    total_events: int = 0
+    last_updated: str | None = None
+    # Events this engine believes it has successfully sent for this source
+    # since start, for eyeballing against the tenant-side count.
+    sent_by_engine: int = 0
 
 
 class ValidationCheck(BaseModel):

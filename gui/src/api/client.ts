@@ -136,6 +136,27 @@ export interface CorrelationApplyResponse {
   ok: boolean
   message: string
   rule: CorrelationRuleInfo
+  // Set when the rule's target dataset doesn't exist on the tenant: the push
+  // succeeded, but the rule can't match anything until events land there.
+  warning: string | null
+}
+
+export interface DatasetInfo {
+  name: string
+  type: string
+  total_events: number
+  total_size_bytes: number
+  last_updated: string | null
+}
+
+export interface SourceIngestionInfo {
+  source_id: string
+  display_name: string
+  dataset: string
+  exists: boolean
+  total_events: number
+  last_updated: string | null
+  sent_by_engine: number
 }
 
 export interface ValidationCheck {
@@ -158,6 +179,8 @@ export const applyCorrelationRule = (id: string, overwrite = false) =>
 export const deleteCorrelationRule = (id: string) => api.delete(`/correlations/${id}`)
 export const deleteAllCorrelationRules = () => api.delete('/correlations')
 export const validateConfig = () => api.post<ConfigValidationResponse>('/config/validate')
+export const getDatasets = () => api.get<DatasetInfo[]>('/datasets')
+export const getIngestionStatus = () => api.get<SourceIngestionInfo[]>('/datasets/ingestion')
 
 export interface ScenarioStepInfo {
   source: string
