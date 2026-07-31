@@ -155,11 +155,6 @@ class WindowsAMSISource(LogSource):
     supported_transports = ["wec", "syslog"]
     default_eps = 2.0
     tags = ["windows", "endpoint", "amsi", "antivirus", "script"]
-    # Deliberately NOT "microsoft_amsi_raw": that is a real built-in dataset on
-    # at least some tenants, and pointing simulated traffic at it both pollutes
-    # genuine data and makes the generated correlation rule invalid (a real
-    # dataset has no simulated_log_source field for the rule to filter on).
-    xsiam_dataset: str = "windows_amsi_sim_raw"
 
     async def generate(self) -> LogEvent:
         event = _build(

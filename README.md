@@ -182,12 +182,15 @@ Expand a source's **HTTP settings** on its card to copy a ready-made ingest rule
 
 Add it under **Settings → XDR Data Management → Parsers → New Parser** in your XSIAM tenant.
 
-> **Generated correlation rules only work against datasets this engine populates.** They filter on
-> `simulated_log_source`, a field the engine injects — so pointing a source at a dataset fed by real
-> ingestion (e.g. a genuine `msft_azure_ad_raw`) makes XSIAM reject the rule outright with
-> `unknown field simulated_log_source`. Give simulated traffic its own dataset via the parsing rule
-> above rather than mixing it into a production one. The **Ingestion** page shows which datasets
-> each source is actually targeting.
+> **Datasets are canonical, not simulated.** Each source targets the dataset a real deployment of
+> that product would use — `okta_sso_raw`, `microsoft_windows_raw`, `amazon_aws_raw` — so a freshly
+> filled tenant gets its built-in parsers, XDM mappings and marketplace content packs working with
+> no custom wiring. Names come from `engine/utils/vendor_map.py`, which also drives the Cribl
+> `vendor`/`product` headers, so the two can't drift apart. The trade-off: generated correlation
+> rules filter on `simulated_log_source`, a field only this engine's events carry, so against a
+> dataset that already holds real telemetry XSIAM rejects the rule with
+> `unknown field simulated_log_source`. That is the intended shape for empty tenants; the push
+> pre-flight warns you when a target dataset is already populated.
 
 ### Cribl Stream emulation
 
@@ -217,7 +220,7 @@ Per source, opt-in, HTTP transport only (toggle in **HTTP settings** on the sour
 
 **Windows sources** — per [Collect Windows Event Logs for Cortex XSIAM via Cribl](https://docs-cortex.paloaltonetworks.com/r/Cortex-XSIAM/Cortex-XSIAM-3.x-Documentation/Collect-Windows-Event-Logs-for-Cortex-XSIAM-via-Cribl), one content pack covers the Security, System, Application, PowerShell, Firewall and TaskScheduler channels, so those sources all present as `vendor: microsoft` / `product: windows` and land together in `microsoft_windows_raw`. Sysmon ships as its own pack and keeps `product: sysmon`.
 
-> ⚠️ **Emulation changes where events land.** The `vendor`/`product` headers select the destination dataset — the engine's own `xsiam_dataset` is not sent, and only drives correlation-rule generation and the Ingestion page. `microsoft_windows_raw`, `msft_azure_ad_raw` and friends are **real, populated datasets on a production tenant**, so turning emulation on for a Windows source mixes simulated events into genuine Windows telemetry. Enabling it logs a warning naming the destination dataset; check the **Ingestion** page first if you're pointing at a tenant you care about.
+> ⚠️ **Aim at an empty tenant.** Sources deliberately target the canonical vendor datasets, so on a tenant that already carries real telemetry your simulated events are interleaved with it. Enabling emulation logs a warning naming the destination dataset, and pushing a correlation rule warns when the target already holds events from another source. Check the **Ingestion** page before pointing this at a tenant you care about.
 
 Off by default, and off is a true no-op — byte-identical output to a source whose toggle was never touched.
 
@@ -331,7 +334,7 @@ This is a lab/testing tool; defaults assume it runs on a trusted network. Curren
 ## Development
 
 ```bash
-# Tests (282 passing: sources, transports HTTP/Syslog/WEC, API, scenarios, engine)
+# Tests (283 passing: sources, transports HTTP/Syslog/WEC, API, scenarios, engine)
 pip install -r engine/requirements.txt
 pytest tests/ -q
 pytest tests/ --cov=engine --cov-report=term-missing   # with coverage
@@ -355,7 +358,7 @@ engine/
   xsiam_api/      XSIAM public-API client + rule generation (correlation rules)
   scenarios/      correlated multi-source attack scenarios (loader, runner, definitions/*.yaml)
   config/         settings (pydantic-settings), defaults.yaml
-  utils/          rate limiter, diagnostics buffer, faker helpers, logger
+  utils/          rate limiter, diagnostics buffer, faker helpers, logger, vendor/dataset map
 gui/
   src/
     pages/        Dashboard, Sources, CorrelationRules, Ingestion, Scenarios, Configuration, LogViewer, Diagnostics

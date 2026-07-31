@@ -18,6 +18,7 @@ from transports.wec_transport import WECTransport
 from transports.base import Transport, SourceMeta
 from utils.logger import get_logger
 from utils.rate_limiter import SlidingWindowCounter, TokenBucket
+from utils.vendor_map import effective_dataset
 
 logger = get_logger(__name__, settings.engine_log_level)
 
@@ -152,7 +153,7 @@ class Engine:
             ),
             facility=getattr(state.source, "syslog_facility", 1),
             severity=getattr(state.source, "syslog_severity", 6),
-            dataset=getattr(state.source, "xsiam_dataset", "") or "",
+            dataset=effective_dataset(state.source),
             http_log_type=state.http_log_type,
             http_compression=state.http_compression,
             http_api_key=state.http_api_key,

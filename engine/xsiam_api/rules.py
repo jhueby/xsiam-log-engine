@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from config.settings import settings
+from utils.vendor_map import effective_dataset
 from xsiam_api.client import RULE_PREFIX
 
 
@@ -17,7 +17,7 @@ def source_id_from_name(name: str) -> str | None:
 
 
 def build_default_rule(source: Any) -> dict[str, Any]:
-    dataset = getattr(source, "xsiam_dataset", "") or settings.xsiam_dataset
+    dataset = effective_dataset(source)
     xql = (
         f"dataset = {dataset} "
         f'| filter simulated_log_source = "{source.id}" '

@@ -117,7 +117,6 @@ class KubernetesAuditSource(LogSource):
     supported_transports = ["http"]
     default_eps = 6.0
     tags = ["cloud", "kubernetes", "container", "audit"]
-    xsiam_dataset: str = "kubernetes_audit_raw"
 
     async def generate(self) -> LogEvent:
         verb, resource, subresource = random.choices(_ACTIONS, weights=_ACTION_WEIGHTS)[0]

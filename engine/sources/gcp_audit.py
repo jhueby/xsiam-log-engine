@@ -94,7 +94,6 @@ class GCPAuditSource(LogSource):
     supported_transports = ["http"]
     default_eps = 4.0
     tags = ["cloud", "gcp", "google", "audit"]
-    xsiam_dataset: str = "google_cloud_audit_raw"
 
     async def generate(self) -> LogEvent:
         # Service accounts do most of the work in a real project, so they

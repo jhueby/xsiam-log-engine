@@ -102,30 +102,43 @@ async def push_correlation_rule(source_id: str, overwrite: bool = False) -> Corr
 
 
 async def _dataset_warning(dataset: str) -> str | None:
-    """Flag a rule that queries a dataset the tenant doesn't have.
+    """Advisory note about the rule's target dataset.
 
-    A correlation rule whose `dataset = ...` doesn't exist is accepted by
-    XSIAM and then silently never fires, which is indistinguishable from
-    "the rule works but nothing matched yet". Deliberately a warning rather
-    than a rejection: the dataset only appears once the first events land,
-    so pushing the rule first is a legitimate order of operations.
+    Sources aim at the canonical vendor dataset (okta_sso_raw,
+    microsoft_windows_raw, ...) so that simulated traffic lands where a real
+    deployment would put it and the tenant's built-in parsers and content
+    packs apply. That makes an *absent* dataset the normal case on the empty
+    tenants this engine is meant to fill — it appears on first ingest — and
+    makes a *populated* one the case worth flagging:
 
-    Failing to check must never block the push that already succeeded, so
-    any error here degrades to no warning.
+      * the generated rule filters on simulated_log_source, a field only this
+        engine's events carry, so against a dataset already holding real
+        telemetry XSIAM rejects the query outright ("unknown field"); and
+      * simulated events will be interleaved with that real data.
+
+    Failing to check must never block the push that already succeeded, so any
+    error here degrades to no warning.
     """
     if not dataset:
         return None
     try:
-        names = {d["name"] for d in await xsiam_api_client.list_datasets()}
+        datasets = {d["name"]: d for d in await xsiam_api_client.list_datasets()}
     except Exception as exc:  # noqa: BLE001 - advisory only, never fatal
         logger.warning({"event": "dataset_check_failed", "dataset": dataset, "error": str(exc)})
         return None
-    if dataset in names:
+
+    found = datasets.get(dataset)
+    if found is None:
+        return None  # expected on an empty tenant; created on first ingest
+
+    events = found.get("total_events") or 0
+    if events <= 0:
         return None
     return (
-        f"Dataset '{dataset}' does not exist on this tenant yet, so this rule "
-        f"cannot match anything. It will start working once events land in that "
-        f"dataset — check the parsing rule that routes simulated_log_source to it."
+        f"Dataset '{dataset}' already holds {events:,} events that did not come from "
+        f"this engine. Simulated events will be mixed in with them, and because this "
+        f"rule filters on simulated_log_source — a field only this engine's events "
+        f"carry — XSIAM may reject it against that dataset's existing schema."
     )
 
 

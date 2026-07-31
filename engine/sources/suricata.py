@@ -158,7 +158,6 @@ class SuricataSource(LogSource):
     supported_transports = ["http", "syslog"]
     default_eps = 12.0
     tags = ["network", "ids", "suricata", "monitoring"]
-    xsiam_dataset: str = "suricata_eve_raw"
 
     async def generate(self) -> LogEvent:
         event = _build(

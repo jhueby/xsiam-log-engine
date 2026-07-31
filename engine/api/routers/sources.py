@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException
 from api.models import SourceInfo, SourceConfigPatch, ControlResponse
 from config.settings import settings
 from main import get_engine
+from utils.vendor_map import effective_dataset
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -36,7 +37,7 @@ def _state_to_info(sid: str) -> SourceInfo:
         http_compression=state.http_compression,
         http_api_key="***" if state.http_api_key else "",
         auto_disabled_reason=state.auto_disabled_reason,
-        xsiam_dataset=getattr(src, "xsiam_dataset", "") or settings.xsiam_dataset,
+        xsiam_dataset=effective_dataset(src),
         cribl_emulation=state.cribl_emulation,
         cribl_source_identifier=state.cribl_source_identifier,
         cribl_vendor=state.cribl_vendor,

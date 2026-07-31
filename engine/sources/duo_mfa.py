@@ -108,7 +108,6 @@ class DuoMFASource(LogSource):
     supported_transports = ["http"]
     default_eps = 3.0
     tags = ["identity", "authentication", "mfa", "cloud", "cisco"]
-    xsiam_dataset: str = "duo_authentication_raw"
 
     async def generate(self) -> LogEvent:
         event = _build(username=random_user(), ip=random_external_ip())

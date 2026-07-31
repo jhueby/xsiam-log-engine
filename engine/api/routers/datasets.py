@@ -7,6 +7,7 @@ from fastapi import APIRouter, HTTPException
 from api.models import DatasetInfo, SourceIngestionInfo
 from config.settings import settings
 from main import get_engine
+from utils.vendor_map import effective_dataset
 from xsiam_api import XsiamApiError, XsiamApiNotConfigured, xsiam_api_client
 
 router = APIRouter(prefix="/api/datasets", tags=["datasets"])
@@ -59,7 +60,7 @@ async def ingestion_status() -> list[SourceIngestionInfo]:
 
     out: list[SourceIngestionInfo] = []
     for source_id, state in engine.sources.items():
-        dataset = getattr(state.source, "xsiam_dataset", "") or settings.xsiam_dataset
+        dataset = effective_dataset(state.source)
         found = by_name.get(dataset)
         out.append(SourceIngestionInfo(
             source_id=source_id,

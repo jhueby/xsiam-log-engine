@@ -179,7 +179,6 @@ class ProofpointTAPSource(LogSource):
     supported_transports = ["http"]
     default_eps = 2.0
     tags = ["email", "cloud", "proxy"]
-    xsiam_dataset: str = "proofpoint_tap_raw"
 
     async def generate(self) -> LogEvent:
         event_type = random.choices(_EVENT_TYPES, weights=_TYPE_WEIGHTS)[0]

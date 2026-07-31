@@ -154,7 +154,6 @@ class AWSGuardDutySource(LogSource):
     supported_transports = ["http"]
     default_eps = 1.0
     tags = ["cloud", "aws", "detection", "threat"]
-    xsiam_dataset: str = "amazon_guardduty_raw"
 
     async def generate(self) -> LogEvent:
         event = _build(

@@ -140,7 +140,6 @@ class M365AuditSource(LogSource):
     supported_transports = ["http"]
     default_eps = 4.0
     tags = ["cloud", "microsoft", "email", "saas", "audit"]
-    xsiam_dataset: str = "msft_o365_audit_raw"
 
     async def generate(self) -> LogEvent:
         workload = random.choices(_WORKLOADS, weights=_WORKLOAD_WEIGHTS)[0]

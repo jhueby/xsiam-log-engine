@@ -148,7 +148,6 @@ class WindowsPowerShellSource(LogSource):
     supported_transports = ["wec", "syslog"]
     default_eps = 4.0
     tags = ["windows", "endpoint", "powershell", "script"]
-    xsiam_dataset: str = "microsoft_powershell_raw"
 
     async def generate(self) -> LogEvent:
         event = _build(

@@ -11,6 +11,7 @@ import httpx
 from config.settings import settings
 from transports.base import SendResult, SourceMeta, Transport
 from utils.logger import get_logger
+from utils.vendor_map import canonical_dataset, vendor_product
 
 logger = get_logger(__name__)
 
@@ -32,42 +33,6 @@ CRIBL_MAX_EVENT_BYTES = 5 * 1024 * 1024        # 5 MB per individual event
 CRIBL_MAX_BATCH_BYTES = int(9.5 * 1024 * 1024)  # 9.5 MB per batch
 
 
-# XSIAM routes to parsers and XDM mappings on vendor/product, so these need
-# to be plausible rather than mechanical. Splitting a source id on its first
-# underscore gets most of them right (aws_cloudtrail, microsoft_defender) but
-# mangles multi-word vendors -- palo_alto_ngfw would become "palo"/"alto_ngfw"
-# -- and says nothing useful for single-word ids. Only the exceptions are
-# listed; everything else falls back to the split.
-_VENDOR_PRODUCT = {
-    # Per "Collect Windows Event Logs for Cortex XSIAM via Cribl", one pack
-    # covers the Security, System, Application, PowerShell, Firewall and
-    # TaskScheduler channels -- they share vendor/product and all land in
-    # microsoft_windows_raw, rather than getting a dataset per channel.
-    "windows_security": ("microsoft", "windows"),
-    "windows_system": ("microsoft", "windows"),
-    "windows_application": ("microsoft", "windows"),
-    "windows_powershell": ("microsoft", "windows"),
-    # Sysmon ships as its own pack, so it keeps its own vendor/product.
-    "sysmon": ("microsoft", "sysmon"),
-    "palo_alto_ngfw": ("paloaltonetworks", "ngfw"),
-    "globalprotect_vpn": ("paloaltonetworks", "globalprotect"),
-    "proxy_bluecoat": ("bluecoat", "proxysg"),
-    "proxy_zscaler": ("zscaler", "internet_access"),
-    "m365_audit": ("microsoft", "office365"),
-    "azure_ad": ("microsoft", "entra_id"),
-    "gcp_audit": ("google", "cloud_audit"),
-    "kubernetes_audit": ("kubernetes", "audit"),
-    "duo_mfa": ("cisco", "duo"),
-    "crowdstrike_falcon": ("crowdstrike", "falcon"),
-    "proofpoint_tap": ("proofpoint", "tap"),
-    "windows_amsi": ("microsoft", "defender_amsi"),
-    "zeek": ("zeek", "network"),
-    "suricata": ("oisf", "suricata"),
-    "netflow": ("cisco", "netflow"),
-    "okta": ("okta", "system_log"),
-}
-
-
 def _cribl_identifiers(meta: SourceMeta) -> dict[str, str]:
     """The identifier set Cribl derives from its internal __-prefixed fields
     (__sourceIdentifier, __inputId, __vendor, __product).
@@ -80,9 +45,7 @@ def _cribl_identifiers(meta: SourceMeta) -> dict[str, str]:
     differently from the real thing.
     """
     source_id = meta.source_id
-    vendor, product = _VENDOR_PRODUCT.get(source_id, (None, None))
-    if vendor is None:
-        vendor, _, product = source_id.partition("_")
+    vendor, product = vendor_product(source_id)
     return {
         "Source-Identifier": meta.cribl_source_identifier or source_id,
         # Cribl generates this from the Source that received the event; it is
@@ -103,10 +66,7 @@ def cribl_routing_note(source_id: str) -> str:
     Windows source delivers simulated events into the same
     microsoft_windows_raw that holds genuine Windows telemetry.
     """
-    vendor, product = _VENDOR_PRODUCT.get(source_id, (None, None))
-    if vendor is None:
-        vendor, _, product = source_id.partition("_")
-    return f"{vendor}_{product}_raw"
+    return canonical_dataset(source_id)
 
 
 def _cribl_envelope(event: Any, meta: SourceMeta) -> dict[str, Any]:

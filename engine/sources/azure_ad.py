@@ -178,7 +178,6 @@ class AzureADSource(LogSource):
     supported_transports = ["http"]
     default_eps = 3.0
     tags = ["identity", "cloud", "azure", "microsoft"]
-    xsiam_dataset: str = "msft_azure_ad_raw"
 
     async def generate(self) -> LogEvent:
         log_type = random.choices(_LOG_TYPES, weights=_TYPE_WEIGHTS)[0]

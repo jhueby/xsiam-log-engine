@@ -157,7 +157,6 @@ class CrowdStrikeFalconSource(LogSource):
     display_name = "CrowdStrike Falcon"
     description = "CrowdStrike Falcon EDR — Detection, ProcessRollup2, NetworkConnect events (JSON)"
     default_transport: TransportName = "http"
-    xsiam_dataset: str = "crowdstrike_falcon_raw"
     supported_transports = ["http"]
     default_eps = 3.0
     tags = ["edr", "endpoint", "windows", "crowdstrike"]

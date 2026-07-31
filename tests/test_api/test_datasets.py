@@ -21,7 +21,7 @@ DATASETS_URL = API_BASE + DATASETS_PATH
 LAST_UPDATED_MS = 1785369600000
 
 ROWS = [
-    {"Dataset Name": "okta_system_log_raw", "Type": "USER", "Total Events": 4211,
+    {"Dataset Name": "okta_sso_raw", "Type": "USER", "Total Events": 4211,
      "Total Size Stored": 8192, "Last Updated": LAST_UPDATED_MS},
     {"Dataset Name": "xdr_data", "Type": "SYSTEM", "Total Events": 2149346,
      "Total Size Stored": 2821454186, "Last Updated": LAST_UPDATED_MS},
@@ -60,9 +60,9 @@ async def test_list_datasets_normalizes_display_cased_keys(client):
     resp = await client.get("/api/datasets")
     assert resp.status_code == 200
     by_name = {d["name"]: d for d in resp.json()}
-    assert by_name["okta_system_log_raw"]["total_events"] == 4211
-    assert by_name["okta_system_log_raw"]["type"] == "USER"
-    assert by_name["okta_system_log_raw"]["last_updated"].startswith("2026-07-30T00:00:00")
+    assert by_name["okta_sso_raw"]["total_events"] == 4211
+    assert by_name["okta_sso_raw"]["type"] == "USER"
+    assert by_name["okta_sso_raw"]["last_updated"].startswith("2026-07-30T00:00:00")
 
 
 @pytest.mark.asyncio
@@ -79,11 +79,11 @@ async def test_ingestion_flags_sources_whose_dataset_is_absent(client):
     by_source = {r["source_id"]: r for r in rows}
 
     okta = by_source["okta"]
-    assert okta["dataset"] == "okta_system_log_raw"
+    assert okta["dataset"] == "okta_sso_raw"
     assert okta["exists"] is True
     assert okta["total_events"] == 4211
 
-    # aws_cloudtrail declares aws_cloudtrail_raw, which isn't in ROWS
+    # aws_cloudtrail resolves to amazon_aws_raw, which isn't in ROWS
     aws = by_source["aws_cloudtrail"]
     assert aws["exists"] is False
     assert aws["total_events"] == 0

@@ -93,7 +93,6 @@ class GlobalProtectVPNSource(LogSource):
     default_eps = 3.0
     tags = ["network", "vpn", "authentication", "paloalto", "remote-access"]
     syslog_facility: int = 16  # local0
-    xsiam_dataset: str = "paloalto_globalprotect_raw"
 
     async def generate(self) -> LogEvent:
         raw, structured = _build(

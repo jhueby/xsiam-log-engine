@@ -86,7 +86,6 @@ class AWSVPCFlowSource(LogSource):
     supported_transports = ["http", "syslog"]
     default_eps = 20.0
     tags = ["cloud", "aws", "network", "flow"]
-    xsiam_dataset: str = "amazon_vpc_flow_raw"
 
     async def generate(self) -> LogEvent:
         # Mostly east-west inside the VPC, with a slice of egress to the

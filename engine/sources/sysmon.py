@@ -190,7 +190,6 @@ class SysmonSource(LogSource):
     supported_transports = ["wec", "syslog"]
     default_eps = 8.0
     tags = ["windows", "endpoint", "sysmon", "process"]
-    xsiam_dataset: str = "microsoft_sysmon_raw"
 
     async def generate(self) -> LogEvent:
         event = _build(

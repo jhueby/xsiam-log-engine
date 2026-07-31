@@ -33,10 +33,10 @@ DATASETS_URL = API_BASE + DATASETS_PATH
 OKTA_RULE = {
     "name": "[LogSim] okta",
     "description": "existing",
-    "xql_query": "dataset = okta_system_log_raw",
+    "xql_query": "dataset = okta_sso_raw",
     "severity": "informational",
     "is_enabled": True,
-    "dataset": "okta_system_log_raw",
+    "dataset": "okta_sso_raw",
 }
 USER_RULE = {"name": "My custom rule", "xql_query": "dataset = foo"}
 
@@ -382,7 +382,7 @@ async def test_preview_is_local(client):
     data = resp.json()
     assert data["name"] == "[LogSim] okta"
     assert 'simulated_log_source = "okta"' in data["xql_query"]
-    assert data["dataset"] == "okta_system_log_raw"
+    assert data["dataset"] == "okta_sso_raw"
 
 
 @pytest.mark.asyncio
@@ -395,7 +395,7 @@ async def test_delete_rule_refuses_unmanaged_name():
 async def test_source_info_exposes_dataset(client):
     resp = await client.get("/api/sources/okta")
     assert resp.status_code == 200
-    assert resp.json()["xsiam_dataset"] == "okta_system_log_raw"
+    assert resp.json()["xsiam_dataset"] == "okta_sso_raw"
 
 
 # ── POST /api/config/validate ──────────────────────────────────────────────
@@ -460,39 +460,56 @@ async def test_validate_unconfigured(client, monkeypatch):
 
 # ── dataset pre-flight on push ─────────────────────────────────────────────
 
-def _mock_datasets(names):
+def _mock_datasets(names, events=0):
     return respx.post(DATASETS_URL).mock(return_value=Response(200, json={
-        "reply": [{"Dataset Name": n, "Type": "USER", "Total Events": 1,
+        "reply": [{"Dataset Name": n, "Type": "USER", "Total Events": events,
                    "Total Size Stored": 1, "Last Updated": 1785369600000} for n in names]
     }))
 
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_push_warns_when_target_dataset_is_absent(client):
-    """A rule whose dataset doesn't exist is accepted by XSIAM and then
-    silently never fires -- indistinguishable from 'works but nothing
-    matched yet'."""
+async def test_push_warns_when_dataset_already_holds_foreign_data(client):
+    """Sources aim at canonical vendor datasets so an empty tenant gets data
+    where a real deployment would put it. That makes a *populated* dataset the
+    thing worth flagging: the rule filters on simulated_log_source, which the
+    existing events don't carry, and simulated data gets mixed into real."""
     _mock_list([])
     respx.post(CORR_DELETE_URL).mock(return_value=Response(200, json={"objects_count": 0, "objects": []}))
     respx.post(CORR_INSERT_URL).mock(return_value=Response(200, json={"added_objects": [{"id": 1}], "errors": []}))
-    _mock_datasets(["some_other_dataset"])
+    _mock_datasets(["okta_sso_raw"], events=4211)
 
     resp = await client.post("/api/correlations/okta")
     assert resp.status_code == 200          # still a success -- not a rejection
     body = resp.json()
     assert body["ok"] is True
-    assert "okta_system_log_raw" in body["warning"]
-    assert "cannot match" in body["warning"]
+    assert "okta_sso_raw" in body["warning"]
+    assert "4,211" in body["warning"]
+    assert "simulated_log_source" in body["warning"]
 
 
 @pytest.mark.asyncio
 @respx.mock
-async def test_push_has_no_warning_when_dataset_exists(client):
+async def test_push_has_no_warning_when_dataset_is_absent(client):
+    """The normal case on an empty tenant: the dataset is created on first
+    ingest, so its absence is not something to warn about."""
     _mock_list([])
     respx.post(CORR_DELETE_URL).mock(return_value=Response(200, json={"objects_count": 0, "objects": []}))
     respx.post(CORR_INSERT_URL).mock(return_value=Response(200, json={"added_objects": [{"id": 1}], "errors": []}))
-    _mock_datasets(["okta_system_log_raw"])
+    _mock_datasets(["some_other_dataset"])
+
+    assert (await client.post("/api/correlations/okta")).json()["warning"] is None
+
+
+@pytest.mark.asyncio
+@respx.mock
+async def test_push_has_no_warning_for_an_empty_target_dataset(client):
+    """A dataset that exists but is empty is the state right after the first
+    parsing rule is created -- nothing to warn about."""
+    _mock_list([])
+    respx.post(CORR_DELETE_URL).mock(return_value=Response(200, json={"objects_count": 0, "objects": []}))
+    respx.post(CORR_INSERT_URL).mock(return_value=Response(200, json={"added_objects": [{"id": 1}], "errors": []}))
+    _mock_datasets(["okta_sso_raw"], events=0)
 
     body = (await client.post("/api/correlations/okta")).json()
     assert body["warning"] is None

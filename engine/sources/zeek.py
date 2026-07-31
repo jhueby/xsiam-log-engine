@@ -169,7 +169,6 @@ class ZeekSource(LogSource):
     supported_transports = ["http", "syslog"]
     default_eps = 15.0
     tags = ["network", "nsm", "zeek", "monitoring"]
-    xsiam_dataset: str = "zeek_network_raw"
 
     async def generate(self) -> LogEvent:
         event = _build(
