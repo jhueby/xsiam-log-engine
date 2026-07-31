@@ -24,8 +24,9 @@ class SourceInfo(BaseModel):
     auto_disabled_reason: str | None
     xsiam_dataset: str  # effective dataset (source override or global default)
     cribl_emulation: bool
-    cribl_pipe_name: str
-    cribl_host_name: str
+    cribl_source_identifier: str
+    cribl_vendor: str
+    cribl_product: str
 
 
 class SourceConfigPatch(BaseModel):
@@ -36,8 +37,9 @@ class SourceConfigPatch(BaseModel):
     http_compression: Literal["none", "gzip"] | None = None
     http_api_key: str | None = None
     cribl_emulation: bool | None = None
-    cribl_pipe_name: str | None = None
-    cribl_host_name: str | None = None
+    cribl_source_identifier: str | None = None
+    cribl_vendor: str | None = None
+    cribl_product: str | None = None
 
 
 class TransportConfig(BaseModel):

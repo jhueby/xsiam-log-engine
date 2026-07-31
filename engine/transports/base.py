@@ -18,9 +18,14 @@ class SourceMeta:
     http_log_type: str = "raw"      # raw | json | cef | leef
     http_compression: str = "none"  # none | gzip
     http_api_key: str = ""          # empty = use global settings.xsiam_api_key
-    cribl_emulation: bool = False   # stamp Cribl Stream-style metadata onto events
-    cribl_pipe_name: str = ""       # empty = "default"
-    cribl_host_name: str = ""       # empty = "cribl-worker.corp.local"
+    # Cribl Stream emulation. When on, events are shaped the way Cribl's
+    # Cortex XSIAM Destination actually delivers them: a {"data", "collector_ms"}
+    # envelope plus the identifier headers XSIAM routes on. The three settings
+    # below map to those headers rather than to anything in the body.
+    cribl_emulation: bool = False
+    cribl_source_identifier: str = ""  # -> Source-Identifier; empty = derived from source_id
+    cribl_vendor: str = ""             # -> vendor header; empty = derived from source_id
+    cribl_product: str = ""            # -> product header; empty = derived from source_id
 
 
 @dataclass

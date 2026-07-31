@@ -57,8 +57,9 @@ class SourceState:
 
         # Cribl Stream metadata emulation (opt-in, default off)
         self.cribl_emulation: bool = False
-        self.cribl_pipe_name: str = ""
-        self.cribl_host_name: str = ""
+        self.cribl_source_identifier: str = ""
+        self.cribl_vendor: str = ""
+        self.cribl_product: str = ""
 
         # Circuit-breaker reason; set when auto-disabled, cleared on manual start
         self.auto_disabled_reason: str | None = None
@@ -156,8 +157,9 @@ class Engine:
             http_compression=state.http_compression,
             http_api_key=state.http_api_key,
             cribl_emulation=state.cribl_emulation,
-            cribl_pipe_name=state.cribl_pipe_name,
-            cribl_host_name=state.cribl_host_name,
+            cribl_source_identifier=state.cribl_source_identifier,
+            cribl_vendor=state.cribl_vendor,
+            cribl_product=state.cribl_product,
         )
         result = await transport.send(event.raw, meta)
 

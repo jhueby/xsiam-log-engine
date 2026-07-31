@@ -277,8 +277,9 @@ function HttpSettings({ source, onUpdate }: { source: SourceInfo; onUpdate: () =
   const [compression, setCompression] = useState<HttpCompression>(source.http_compression)
   const [apiKey, setApiKey] = useState('')
   const [criblEmulation, setCriblEmulation] = useState(source.cribl_emulation)
-  const [criblPipeName, setCriblPipeName] = useState(source.cribl_pipe_name)
-  const [criblHostName, setCriblHostName] = useState(source.cribl_host_name)
+  const [criblSourceId, setCriblSourceId] = useState(source.cribl_source_identifier)
+  const [criblVendor, setCriblVendor] = useState(source.cribl_vendor)
+  const [criblProduct, setCriblProduct] = useState(source.cribl_product)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const { show } = useToast()
@@ -291,8 +292,9 @@ function HttpSettings({ source, onUpdate }: { source: SourceInfo; onUpdate: () =
         http_log_type: logType,
         http_compression: compression,
         cribl_emulation: criblEmulation,
-        cribl_pipe_name: criblPipeName,
-        cribl_host_name: criblHostName,
+        cribl_source_identifier: criblSourceId,
+        cribl_vendor: criblVendor,
+        cribl_product: criblProduct,
       }
       if (apiKey) patch.http_api_key = apiKey
       await patchSource(source.id, patch as any)
@@ -355,29 +357,46 @@ function HttpSettings({ source, onUpdate }: { source: SourceInfo; onUpdate: () =
             checked={criblEmulation}
             onChange={e => setCriblEmulation(e.target.checked)}
           />
-          Simulate Cribl Stream collector metadata
+          Deliver via Cribl Stream XSIAM destination
         </label>
         {criblEmulation && (
-          <div className="grid grid-cols-2 gap-2">
+          <div className="space-y-2">
+            <p className="text-xs text-gray-500 leading-relaxed">
+              Wraps each event as <code className="font-mono">{'{"data", "collector_ms"}'}</code> and
+              sends the identifier headers XSIAM routes on. Leave a field blank to derive it from the
+              source id.
+            </p>
             <div>
-              <label className="block text-xs text-gray-500 mb-1">Cribl pipe</label>
+              <label className="block text-xs text-gray-500 mb-1">Source-Identifier</label>
               <input
                 type="text"
-                value={criblPipeName}
-                onChange={e => setCriblPipeName(e.target.value)}
-                placeholder="default"
+                value={criblSourceId}
+                onChange={e => setCriblSourceId(e.target.value)}
+                placeholder={source.id}
                 className="w-full bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-2 py-1 text-xs focus:outline-none focus:border-indigo-500"
               />
             </div>
-            <div>
-              <label className="block text-xs text-gray-500 mb-1">Cribl worker host</label>
-              <input
-                type="text"
-                value={criblHostName}
-                onChange={e => setCriblHostName(e.target.value)}
-                placeholder="cribl-worker.corp.local"
-                className="w-full bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-2 py-1 text-xs focus:outline-none focus:border-indigo-500"
-              />
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">vendor</label>
+                <input
+                  type="text"
+                  value={criblVendor}
+                  onChange={e => setCriblVendor(e.target.value)}
+                  placeholder={source.id.split('_')[0]}
+                  className="w-full bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-2 py-1 text-xs focus:outline-none focus:border-indigo-500"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">product</label>
+                <input
+                  type="text"
+                  value={criblProduct}
+                  onChange={e => setCriblProduct(e.target.value)}
+                  placeholder={source.id.split('_').slice(1).join('_') || source.id}
+                  className="w-full bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded px-2 py-1 text-xs focus:outline-none focus:border-indigo-500"
+                />
+              </div>
             </div>
           </div>
         )}

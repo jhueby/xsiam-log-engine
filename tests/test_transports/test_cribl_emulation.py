@@ -1,8 +1,17 @@
-"""Tests for Cribl Stream metadata stamping (issue #10) — opt-in, per-source,
-default off. Covers both JSON and raw/CEF/LEEF framing, on both send() and
-send_batch(), plus the "default off is a true no-op" regression lock."""
+"""Cribl Stream XSIAM-destination emulation.
+
+Pinned to the documented behaviour of Cribl's Cortex XSIAM Destination
+(docs.cribl.io/stream/destinations-xsiam and the XSIAM onboarding guide):
+
+  * events are delivered as {"data": <event>, "collector_ms": <epoch ms>}
+  * routing identifiers travel as HTTP headers (Source-Identifier,
+    Integration-Identifier, vendor, product, format), derived from Cribl's
+    internal __-prefixed fields -- they are NOT left in the payload
+  * the destination enforces 5 MB per event and 9.5 MB per batch
+
+plus the standing rule that emulation off is a byte-for-byte no-op.
+"""
 import json
-import time
 import os
 import sys
 
@@ -10,115 +19,178 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'engine'))
 
-from transports.http_transport import _build_body, _augment_json_event, _augment_raw_line
 from transports.base import SourceMeta
-
-BASE = dict(source_id="okta", source_name="Okta", transport="http")
-
-
-def meta(**overrides) -> SourceMeta:
-    return SourceMeta(**{**BASE, "format": "json", **overrides})
-
-
-# ── Default off: byte-identical to no-cribl output ─────────────────────────
-
-def test_cribl_off_json_is_unchanged():
-    off = meta(http_log_type="json", cribl_emulation=False)
-    body = _build_body(json.dumps({"a": 1}), off)
-    event = json.loads(body)
-    assert event == {"simulated_log_source": "okta", "a": 1}
-    assert "cribl_pipe" not in event
+from transports.http_transport import (
+    CRIBL_MAX_BATCH_BYTES,
+    CRIBL_MAX_EVENT_BYTES,
+    HTTPTransport,
+    _build_body,
+)
 
 
-def test_cribl_off_raw_is_byte_identical_to_original_format():
-    off = meta(http_log_type="raw", cribl_emulation=False)
-    body = _build_body("some raw log line", off)
-    assert body == b'simulated_log_source="okta" some raw log line\n'
+def _meta(**kw) -> SourceMeta:
+    base = dict(source_id="palo_alto_ngfw", source_name="Palo Alto NGFW",
+                format="json", transport="http", http_log_type="json")
+    base.update(kw)
+    return SourceMeta(**base)
 
 
-# ── Cribl on: JSON framing ──────────────────────────────────────────────────
-
-def test_cribl_on_json_injects_all_fields():
-    on = meta(http_log_type="json", cribl_emulation=True)
-    body = _build_body(json.dumps({"a": 1}), on)
-    event = json.loads(body)
-
-    assert event["simulated_log_source"] == "okta"
-    assert event["cribl_pipe"] == "default"
-    assert event["cribl_host"] == "cribl-worker.corp.local"
-    assert event["cribl_breaker"] == "auto_line_breaker"
-    assert event["sourcetype"] == "okta"
-    assert event["source"] == "cribl:default:okta"
-    assert isinstance(event["_time"], float)
-    assert abs(event["_time"] - time.time()) < 5  # sane, current epoch time
-    assert event["a"] == 1  # original payload preserved
+ON = _meta(cribl_emulation=True)
+OFF = _meta(cribl_emulation=False)
 
 
-def test_cribl_on_honors_pipe_and_host_overrides():
-    on = meta(http_log_type="json", cribl_emulation=True, cribl_pipe_name="prod_pipe", cribl_host_name="cribl-worker-07")
-    body = _build_body(json.dumps({}), on)
-    event = json.loads(body)
-    assert event["cribl_pipe"] == "prod_pipe"
-    assert event["cribl_host"] == "cribl-worker-07"
-    assert event["source"] == "cribl:prod_pipe:okta"
+# ── envelope ────────────────────────────────────────────────────────────────
+
+def test_json_event_is_wrapped_in_data_collector_ms():
+    body = json.loads(_build_body(json.dumps({"a": 1}), ON).decode())
+    assert set(body) == {"data", "collector_ms"}
+    assert body["data"]["a"] == 1
+    # data is a native JSON object, not a stringified blob
+    assert isinstance(body["data"], dict)
+    assert isinstance(body["collector_ms"], int)
+    # epoch *milliseconds*, so well past the seconds-scale value
+    assert body["collector_ms"] > 1_600_000_000_000
 
 
-# ── Cribl on: raw/CEF/LEEF framing ──────────────────────────────────────────
-
-def test_cribl_on_raw_prefixes_fields_before_simulated_log_source():
-    on = meta(http_log_type="raw", cribl_emulation=True)
-    body = _build_body("some raw log line", on)
-    text = body.decode()
-    assert text.startswith('cribl_pipe="default" cribl_host="cribl-worker.corp.local" ')
-    assert 'simulated_log_source="okta" some raw log line' in text
-    # cribl fields come before simulated_log_source, matching the spec order
-    assert text.index("cribl_pipe") < text.index("simulated_log_source")
+def test_engine_tag_survives_inside_the_envelope():
+    """simulated_log_source is what the parsing rules filter on, so it has to
+    live with the event inside `data`, not alongside it."""
+    body = json.loads(_build_body(json.dumps({"a": 1}), ON).decode())
+    assert body["data"]["simulated_log_source"] == "palo_alto_ngfw"
+    assert "simulated_log_source" not in body
 
 
-def test_cribl_on_raw_json_shaped_payload_injects_instead_of_prefixing():
-    # A raw/CEF source whose payload happens to already be JSON-shaped still
-    # gets fields injected (not prefixed), same rule as simulated_log_source.
-    on = meta(http_log_type="raw", cribl_emulation=True)
-    body = _build_body(json.dumps({"x": 1}), on)
-    event = json.loads(body)
-    assert event["cribl_pipe"] == "default"
-    assert event["x"] == 1
+def test_raw_event_is_also_wrapped_with_the_string_in_data():
+    meta = _meta(cribl_emulation=True, http_log_type="raw")
+    body = json.loads(_build_body("<134>Jun 11 sample cef line", meta).decode())
+    assert isinstance(body["data"], str)
+    assert "sample cef line" in body["data"]
+    assert 'simulated_log_source="palo_alto_ngfw"' in body["data"]
 
 
-# ── send_batch() gets the same treatment ────────────────────────────────────
+def test_no_invented_cribl_body_fields():
+    """Regression: an earlier emulation stamped cribl_pipe / cribl_host /
+    cribl_breaker / sourcetype into the payload. No real Cribl worker sends
+    those to XSIAM -- its internal fields are __-prefixed and become headers,
+    so those keys made the traffic diverge from the thing being emulated."""
+    body = _build_body(json.dumps({"a": 1}), ON).decode()
+    for invented in ("cribl_pipe", "cribl_host", "cribl_breaker", "sourcetype", "_time"):
+        assert invented not in body, f"{invented} should not be in the delivered body"
+
+
+# ── headers ─────────────────────────────────────────────────────────────────
+
+def test_identifier_headers_are_sent():
+    headers = HTTPTransport()._build_headers(ON)
+    assert headers["Source-Identifier"] == "palo_alto_ngfw"
+    assert headers["Integration-Identifier"] == "cribl:in_palo_alto_ngfw"
+    # Real vendor/product, not a mechanical split of the source id: these
+    # headers pick the XSIAM parser, so "palo"/"alto_ngfw" would route wrong.
+    assert headers["vendor"] == "paloaltonetworks"
+    assert headers["product"] == "ngfw"
+    assert headers["format"] == "json"
+
+
+def test_identifier_headers_can_be_overridden():
+    meta = _meta(cribl_emulation=True, cribl_source_identifier="pan_fw_prod",
+                 cribl_vendor="paloaltonetworks", cribl_product="firewall")
+    headers = HTTPTransport()._build_headers(meta)
+    assert headers["Source-Identifier"] == "pan_fw_prod"
+    assert headers["vendor"] == "paloaltonetworks"
+    assert headers["product"] == "firewall"
+
+
+def test_vendor_product_falls_back_to_a_split_for_unmapped_sources():
+    headers = HTTPTransport()._build_headers(
+        _meta(cribl_emulation=True, source_id="acme_widget"))
+    assert headers["vendor"] == "acme"
+    assert headers["product"] == "widget"
+
+
+def test_format_header_tracks_log_type():
+    assert HTTPTransport()._build_headers(
+        _meta(cribl_emulation=True, http_log_type="json"))["format"] == "json"
+    for lt in ("raw", "cef", "leef"):
+        headers = HTTPTransport()._build_headers(_meta(cribl_emulation=True, http_log_type=lt))
+        assert headers["format"] == "raw", f"{lt} should be delivered as raw"
+
+
+def test_content_type_is_json_even_for_raw_events():
+    """The envelope is JSON regardless of what `data` holds."""
+    headers = HTTPTransport()._build_headers(_meta(cribl_emulation=True, http_log_type="cef"))
+    assert headers["Content-Type"] == "application/json"
+
+
+def test_no_identifier_headers_when_emulation_is_off():
+    headers = HTTPTransport()._build_headers(OFF)
+    for h in ("Source-Identifier", "Integration-Identifier", "vendor", "product", "format"):
+        assert h not in headers
+    # ...and the content type still follows the source's own log type
+    assert headers["Content-Type"] == "application/json"
+    assert HTTPTransport()._build_headers(_meta(http_log_type="cef"))["Content-Type"] == "text/plain"
+
+
+def test_gzip_still_applies_under_cribl():
+    headers = HTTPTransport()._build_headers(_meta(cribl_emulation=True, http_compression="gzip"))
+    assert headers["Content-Encoding"] == "gzip"
+    assert headers["Content-Type"] == "application/json"
+
+
+# ── size limits ─────────────────────────────────────────────────────────────
 
 @pytest.mark.asyncio
-async def test_send_batch_json_stamps_every_event(monkeypatch):
-    import respx
-    import httpx
-    from config.settings import settings
-    from transports.http_transport import HTTPTransport
-
-    on = meta(http_log_type="json", cribl_emulation=True)
+async def test_oversized_event_is_rejected_not_sent():
+    """The destination enforces 5 MB per event, so an over-limit event must
+    fail here rather than report success for something that would be dropped
+    in a real pipeline."""
     transport = HTTPTransport()
-    events = [{"i": i} for i in range(3)]
-    with respx.mock:
-        route = respx.post(settings.xsiam_url).mock(return_value=httpx.Response(200, json={"ok": True}))
-        result = await transport.send_batch(events, on)
-    assert result.success
-    sent = json.loads(route.calls.last.request.content)
-    assert len(sent) == 3
-    assert all(e["cribl_pipe"] == "default" and e["sourcetype"] == "okta" for e in sent)
-    await transport.close()
+    huge = json.dumps({"blob": "x" * (CRIBL_MAX_EVENT_BYTES + 1000)})
+    result = await transport.send(huge, ON)
+    assert result.success is False
+    assert "per-event limit" in result.error
 
 
 @pytest.mark.asyncio
-async def test_send_batch_off_has_no_cribl_fields():
-    import respx
-    import httpx
-    from config.settings import settings
-    from transports.http_transport import HTTPTransport
-
-    off = meta(http_log_type="json", cribl_emulation=False)
+async def test_oversized_event_is_allowed_when_emulation_is_off():
+    """The limit belongs to Cribl, not to the engine -- without emulation the
+    event should attempt delivery (and fail only on the network, since no
+    collector is reachable in tests)."""
     transport = HTTPTransport()
-    with respx.mock:
-        route = respx.post(settings.xsiam_url).mock(return_value=httpx.Response(200, json={"ok": True}))
-        await transport.send_batch([{"i": 1}], off)
-    sent = json.loads(route.calls.last.request.content)
-    assert "cribl_pipe" not in sent[0]
-    await transport.close()
+    huge = json.dumps({"blob": "x" * (CRIBL_MAX_EVENT_BYTES + 1000)})
+    result = await transport.send(huge, OFF)
+    assert result.success is False
+    assert "per-event limit" not in (result.error or "")
+
+
+@pytest.mark.asyncio
+async def test_oversized_batch_is_rejected():
+    transport = HTTPTransport()
+    # Each event is comfortably under the per-event cap; the batch is not.
+    chunk = {"blob": "x" * 100_000}
+    events = [chunk] * ((CRIBL_MAX_BATCH_BYTES // 100_000) + 5)
+    result = await transport.send_batch(events, ON)
+    assert result.success is False
+    assert "batch limit" in result.error
+
+
+# ── off is a true no-op ─────────────────────────────────────────────────────
+
+def test_off_is_byte_identical_to_never_touching_the_toggle():
+    untouched = _meta()
+    explicitly_off = _meta(cribl_emulation=False, cribl_source_identifier="ignored",
+                           cribl_vendor="ignored", cribl_product="ignored")
+    payload = json.dumps({"a": 1})
+    assert _build_body(payload, untouched) == _build_body(payload, explicitly_off)
+
+
+def test_off_leaves_the_event_unwrapped():
+    body = json.loads(_build_body(json.dumps({"a": 1}), OFF).decode())
+    assert "data" not in body and "collector_ms" not in body
+    assert body["simulated_log_source"] == "palo_alto_ngfw"
+    assert body["a"] == 1
+
+
+def test_off_raw_line_is_a_bare_prefixed_string():
+    body = _build_body("<134>sample line", _meta(http_log_type="raw")).decode()
+    assert body.startswith('simulated_log_source="palo_alto_ngfw" ')
+    assert "collector_ms" not in body

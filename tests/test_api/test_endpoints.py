@@ -123,18 +123,20 @@ async def test_patch_source_eps(client):
 async def test_patch_source_cribl_emulation(client):
     resp = await client.patch(
         "/api/sources/okta/config",
-        json={"cribl_emulation": True, "cribl_pipe_name": "prod_pipe", "cribl_host_name": "cribl-07"},
+        json={"cribl_emulation": True, "cribl_source_identifier": "okta_prod",
+              "cribl_vendor": "okta", "cribl_product": "system_log"},
     )
     assert resp.status_code == 200
     data = resp.json()
     assert data["cribl_emulation"] is True
-    assert data["cribl_pipe_name"] == "prod_pipe"
-    assert data["cribl_host_name"] == "cribl-07"
+    assert data["cribl_source_identifier"] == "okta_prod"
+    assert data["cribl_vendor"] == "okta"
+    assert data["cribl_product"] == "system_log"
 
-    # toggling off is independently settable, doesn't require clearing pipe/host
+    # toggling off is independently settable, doesn't clear the identifiers
     resp = await client.patch("/api/sources/okta/config", json={"cribl_emulation": False})
     assert resp.json()["cribl_emulation"] is False
-    assert resp.json()["cribl_pipe_name"] == "prod_pipe"  # preserved, not reset
+    assert resp.json()["cribl_source_identifier"] == "okta_prod"  # preserved, not reset
 
 
 @pytest.mark.asyncio
@@ -142,8 +144,9 @@ async def test_source_info_defaults_cribl_emulation_off(client):
     resp = await client.get("/api/sources/crowdstrike_falcon")
     data = resp.json()
     assert data["cribl_emulation"] is False
-    assert data["cribl_pipe_name"] == ""
-    assert data["cribl_host_name"] == ""
+    assert data["cribl_source_identifier"] == ""
+    assert data["cribl_vendor"] == ""
+    assert data["cribl_product"] == ""
 
 
 @pytest.mark.asyncio

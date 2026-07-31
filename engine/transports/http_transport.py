@@ -25,31 +25,83 @@ _LOG_TYPE_CONTENT_TYPE = {
 }
 
 
-def _cribl_fields(meta: SourceMeta) -> dict[str, Any]:
-    """Cribl Stream-style metadata to stamp onto an event, as if it had been
-    routed through a Cribl worker before reaching XSIAM. Empty (no-op) unless
-    the source has opted in via meta.cribl_emulation."""
-    if not meta.cribl_emulation:
-        return {}
-    pipe = meta.cribl_pipe_name or "default"
-    host = meta.cribl_host_name or "cribl-worker.corp.local"
+# Cribl's Cortex XSIAM Destination enforces these; exceeding them is a
+# delivery failure at the destination rather than something XSIAM rejects,
+# so the emulation surfaces it the same way instead of sending anyway.
+CRIBL_MAX_EVENT_BYTES = 5 * 1024 * 1024        # 5 MB per individual event
+CRIBL_MAX_BATCH_BYTES = int(9.5 * 1024 * 1024)  # 9.5 MB per batch
+
+
+# XSIAM routes to parsers and XDM mappings on vendor/product, so these need
+# to be plausible rather than mechanical. Splitting a source id on its first
+# underscore gets most of them right (aws_cloudtrail, microsoft_defender) but
+# mangles multi-word vendors -- palo_alto_ngfw would become "palo"/"alto_ngfw"
+# -- and says nothing useful for single-word ids. Only the exceptions are
+# listed; everything else falls back to the split.
+_VENDOR_PRODUCT = {
+    "palo_alto_ngfw": ("paloaltonetworks", "ngfw"),
+    "globalprotect_vpn": ("paloaltonetworks", "globalprotect"),
+    "proxy_bluecoat": ("bluecoat", "proxysg"),
+    "proxy_zscaler": ("zscaler", "internet_access"),
+    "m365_audit": ("microsoft", "office365"),
+    "azure_ad": ("microsoft", "entra_id"),
+    "gcp_audit": ("google", "cloud_audit"),
+    "kubernetes_audit": ("kubernetes", "audit"),
+    "duo_mfa": ("cisco", "duo"),
+    "crowdstrike_falcon": ("crowdstrike", "falcon"),
+    "proofpoint_tap": ("proofpoint", "tap"),
+    "sysmon": ("microsoft", "sysmon"),
+    "windows_powershell": ("microsoft", "powershell"),
+    "windows_amsi": ("microsoft", "defender_amsi"),
+    "zeek": ("zeek", "network"),
+    "suricata": ("oisf", "suricata"),
+    "netflow": ("cisco", "netflow"),
+    "okta": ("okta", "system_log"),
+}
+
+
+def _cribl_identifiers(meta: SourceMeta) -> dict[str, str]:
+    """The identifier set Cribl derives from its internal __-prefixed fields
+    (__sourceIdentifier, __inputId, __vendor, __product).
+
+    Those fields never appear in the delivered body — Cribl maps them to HTTP
+    headers, which is how XSIAM picks the parser, dataset and XDM mapping. An
+    earlier version of this emulation invented body fields (cribl_pipe,
+    cribl_host, cribl_breaker) that no real Cribl worker sends; they made the
+    payload look Cribl-ish while producing traffic XSIAM would route
+    differently from the real thing.
+    """
+    source_id = meta.source_id
+    vendor, product = _VENDOR_PRODUCT.get(source_id, (None, None))
+    if vendor is None:
+        vendor, _, product = source_id.partition("_")
     return {
-        "cribl_pipe": pipe,
-        "cribl_host": host,
-        "cribl_breaker": "auto_line_breaker",
-        "_time": datetime.now(timezone.utc).timestamp(),
-        "source": f"cribl:{pipe}:{meta.source_id}",
-        "sourcetype": meta.source_id,
+        "Source-Identifier": meta.cribl_source_identifier or source_id,
+        # Cribl generates this from the Source that received the event; it is
+        # set automatically and must not be dropped.
+        "Integration-Identifier": f"cribl:in_{source_id}",
+        "vendor": meta.cribl_vendor or vendor or source_id,
+        "product": meta.cribl_product or product or source_id,
     }
 
 
+def _cribl_envelope(event: Any, meta: SourceMeta) -> dict[str, Any]:
+    """Wrap an event the way the XSIAM Destination delivers it.
+
+    The destination sends `{"data": <event>, "collector_ms": <epoch ms>}`,
+    with `data` as a native JSON object when the event is structured. Nothing
+    Cribl-specific is added to the event itself.
+    """
+    return {"data": event, "collector_ms": int(datetime.now(timezone.utc).timestamp() * 1000)}
+
+
 def _augment_json_event(event: dict, meta: SourceMeta) -> dict:
-    return {"simulated_log_source": meta.source_id, **_cribl_fields(meta), **event}
+    tagged = {"simulated_log_source": meta.source_id, **event}
+    return _cribl_envelope(tagged, meta) if meta.cribl_emulation else tagged
 
 
 def _augment_raw_line(line: str, meta: SourceMeta) -> str:
-    prefix = "".join(f'{k}="{v}" ' for k, v in _cribl_fields(meta).items())
-    return f'{prefix}simulated_log_source="{meta.source_id}" {line}'
+    return f'simulated_log_source="{meta.source_id}" {line}'
 
 
 def _build_body(payload: str, meta: SourceMeta) -> bytes:
@@ -75,8 +127,14 @@ def _build_body(payload: str, meta: SourceMeta) -> bytes:
             return (json.dumps(event) + "\n").encode("utf-8")
     except (json.JSONDecodeError, ValueError):
         pass
-    # Plain-text log (CEF, LEEF, syslog-style): prefix with key=value pairs
-    return (_augment_raw_line(stripped, meta) + "\n").encode("utf-8")
+
+    # Plain-text log (CEF, LEEF, syslog-style).
+    tagged = _augment_raw_line(stripped, meta)
+    if meta.cribl_emulation:
+        # Cribl still wraps non-JSON events; `data` carries the raw string
+        # and the `format` header tells XSIAM how to read it.
+        return (json.dumps(_cribl_envelope(tagged, meta)) + "\n").encode("utf-8")
+    return (tagged + "\n").encode("utf-8")
 
 
 class HTTPTransport(Transport):
@@ -95,12 +153,40 @@ class HTTPTransport(Transport):
             "Content-Type": content_type,
             "Authorization": api_key,
         }
+        if meta.cribl_emulation:
+            # The destination always sends JSON regardless of the original
+            # event format, because the {"data", "collector_ms"} envelope is
+            # JSON even when `data` holds a raw string.
+            headers["Content-Type"] = "application/json"
+            headers.update(_cribl_identifiers(meta))
+            # Tells XSIAM how to read the contents of `data`.
+            headers["format"] = "json" if meta.http_log_type == "json" else "raw"
+            # NOTE: Cribl labels its credential a "Bearer Token", but the
+            # XSIAM HTTP collector this engine targets authenticates with the
+            # key sent verbatim (confirmed against a live tenant). The header
+            # is left as-is rather than guessing at a "Bearer " prefix that
+            # would silently break ingestion if wrong.
         if meta.http_compression == "gzip":
             headers["Content-Encoding"] = "gzip"
         return headers
 
     async def send(self, payload: str, source_meta: SourceMeta) -> SendResult:
         body = _build_body(payload, source_meta)
+
+        # Cribl's destination rejects an oversized event before it reaches
+        # XSIAM. Measured pre-compression, since that is the size the
+        # destination checks. Emulating the limit means a source that would
+        # be dropped in a real pipeline is dropped here too, rather than
+        # appearing to deliver successfully.
+        if source_meta.cribl_emulation and len(body) > CRIBL_MAX_EVENT_BYTES:
+            error = (
+                f"Event is {len(body)} bytes, over Cribl's {CRIBL_MAX_EVENT_BYTES}-byte "
+                f"per-event limit for the XSIAM destination"
+            )
+            logger.error({"event": "cribl_event_too_large", "source": source_meta.source_id,
+                          "bytes": len(body), "limit": CRIBL_MAX_EVENT_BYTES})
+            return SendResult(success=False, error=error)
+
         if source_meta.http_compression == "gzip":
             encoded = gzip.compress(body)
         else:
@@ -171,6 +257,18 @@ class HTTPTransport(Transport):
                 _augment_raw_line(e.get("raw", json.dumps(e)) if isinstance(e, dict) else str(e), source_meta)
                 for e in events
             ).encode("utf-8") + b"\n"
+
+        # Same rationale as the per-event guard in send(): the destination
+        # enforces a batch ceiling, so an over-limit batch must fail here
+        # rather than report success for events that would never arrive.
+        if source_meta.cribl_emulation and len(body) > CRIBL_MAX_BATCH_BYTES:
+            error = (
+                f"Batch is {len(body)} bytes, over Cribl's {CRIBL_MAX_BATCH_BYTES}-byte "
+                f"batch limit for the XSIAM destination"
+            )
+            logger.error({"event": "cribl_batch_too_large", "source": source_meta.source_id,
+                          "bytes": len(body), "events": len(events), "limit": CRIBL_MAX_BATCH_BYTES})
+            return SendResult(success=False, error=error)
 
         if source_meta.http_compression == "gzip":
             encoded = gzip.compress(body)

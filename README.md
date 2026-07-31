@@ -191,7 +191,33 @@ Add it under **Settings → XDR Data Management → Parsers → New Parser** in 
 
 ### Cribl Stream emulation
 
-Per source, opt-in, HTTP transport only (toggle in **HTTP settings** on the source card). Stamps events with Cribl Stream-style metadata — `cribl_pipe`, `cribl_host`, `cribl_breaker`, `_time`, `source`, `sourcetype` — as if the event had been routed through a Cribl worker before reaching XSIAM, without an actual Cribl instance anywhere. Off by default; off is a no-op (byte-identical output to a source with the toggle never touched).
+Per source, opt-in, HTTP transport only (toggle in **HTTP settings** on the source card). Delivers events the way Cribl Stream's [Cortex XSIAM Destination](https://docs.cribl.io/stream/destinations-xsiam) does, so you can exercise the Cribl-fronted ingestion path without a Cribl instance anywhere.
+
+**Envelope** — each event is wrapped rather than sent bare:
+
+```json
+{"data": {"simulated_log_source": "palo_alto_ngfw", "…": "…"}, "collector_ms": 1785469200123}
+```
+
+`data` is a native JSON object for JSON sources and the raw string for CEF/LEEF/syslog sources; `collector_ms` is epoch **milliseconds**.
+
+**Headers** — Cribl maps its internal `__`-prefixed fields to the headers XSIAM routes on, so they travel as headers, not payload fields:
+
+| Header | From | Default |
+|--------|------|---------|
+| `Source-Identifier` | `__sourceIdentifier` | the source id |
+| `Integration-Identifier` | `__inputId` | `cribl:in_<source id>` |
+| `vendor` | `__vendor` | real vendor name per source (e.g. `paloaltonetworks`) |
+| `product` | `__product` | real product name per source (e.g. `ngfw`) |
+| `format` | destination | `json`, or `raw` for CEF/LEEF/raw |
+
+`Source-Identifier`, `vendor` and `product` are editable per source; leave a field blank to derive it. `Content-Type` is always `application/json` under emulation, since the envelope is JSON even when `data` holds a raw string.
+
+**Limits** — the destination's own ceilings are enforced, so an event that a real pipeline would drop fails here instead of reporting success: **5 MB** per event and **9.5 MB** per batch, measured pre-compression.
+
+Off by default, and off is a true no-op — byte-identical output to a source whose toggle was never touched.
+
+> Earlier versions stamped invented fields (`cribl_pipe`, `cribl_host`, `cribl_breaker`, `sourcetype`) into the body. No real Cribl worker sends those to XSIAM, so the emulated traffic diverged from the thing it was emulating; they've been removed.
 
 ---
 
@@ -301,7 +327,7 @@ This is a lab/testing tool; defaults assume it runs on a trusted network. Curren
 ## Development
 
 ```bash
-# Tests (267 passing: sources, transports HTTP/Syslog/WEC, API, scenarios, engine)
+# Tests (276 passing: sources, transports HTTP/Syslog/WEC, API, scenarios, engine)
 pip install -r engine/requirements.txt
 pytest tests/ -q
 pytest tests/ --cov=engine --cov-report=term-missing   # with coverage

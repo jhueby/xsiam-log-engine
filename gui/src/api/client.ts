@@ -49,8 +49,9 @@ export interface SourceInfo {
   auto_disabled_reason: string | null
   xsiam_dataset: string  // effective dataset (source override or global default)
   cribl_emulation: boolean
-  cribl_pipe_name: string
-  cribl_host_name: string
+  cribl_source_identifier: string
+  cribl_vendor: string
+  cribl_product: string
 }
 
 export interface StatsResponse {
@@ -102,8 +103,9 @@ export const patchSource = (id: string, data: Partial<{
   http_compression: HttpCompression
   http_api_key: string
   cribl_emulation: boolean
-  cribl_pipe_name: string
-  cribl_host_name: string
+  cribl_source_identifier: string
+  cribl_vendor: string
+  cribl_product: string
 }>) => api.patch<SourceInfo>(`/sources/${id}/config`, data)
 
 export const getStats = () => api.get<StatsResponse>('/stats')
