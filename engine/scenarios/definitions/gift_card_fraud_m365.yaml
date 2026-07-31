@@ -7,7 +7,8 @@ description: >
   identity signs in from attacker infrastructure, mines SharePoint/OneDrive
   for gift card issuance workflows, registers its own authenticator to
   survive password resets, and phishes internally to widen the foothold
-  before issuing cards. Delays are seconds from scenario start.
+  before issuing cards. Mailbox rules and hard-deletes hide the replies
+  (T1564.008 / T1070.008). Delays are seconds from scenario start.
   Source: https://unit42.paloaltonetworks.com/cloud-based-gift-card-fraud-campaign
 steps:
   # 1. Initial access: phishing mail lands, spoofing an M365 login portal.
@@ -42,6 +43,22 @@ steps:
       app: SharePoint Online
       result_type: "0"
 
+  # 4b. The recon itself: pulling the gift card issuance documentation out of
+  #     SharePoint (T1530, Data from Cloud Storage).
+  - source: m365_audit
+    delay: 150
+    jitter: 15
+    overrides: {operation: FileDownloaded, workload: SharePoint}
+
+  # 4c. Mailbox hygiene, attacker style: an inbox rule that files replies
+  #     straight into Deleted Items and marks them read, so the victim never
+  #     sees the responses to the phishing sent from their own account
+  #     (T1564.008, Email Hiding Rules).
+  - source: m365_audit
+    delay: 175
+    jitter: 10
+    overrides: {operation: New-InboxRule}
+
   # 5. Identity persistence: enroll an attacker-controlled authenticator so
   #    MFA keeps succeeding even after a credential reset (T1556 / T1098.005).
   - source: azure_ad
@@ -57,6 +74,13 @@ steps:
     delay: 320
     jitter: 30
     overrides: {event_type: messagesDelivered}
+
+  # 6b. Covering tracks: the victim's replies to that internal phish are
+  #     hard-deleted from the mailbox (T1070.008, Clear Mailbox Data).
+  - source: m365_audit
+    delay: 370
+    jitter: 20
+    overrides: {operation: HardDelete}
 
   # 7. Fraud execution: the identity reaches the gift card issuance app.
   - source: azure_ad

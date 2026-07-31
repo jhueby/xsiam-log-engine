@@ -179,3 +179,108 @@ async def test_azure_ad_plain_generate_still_works():
             assert data["properties"]["initiatedBy"]["user"]["userPrincipalName"]
             assert data["operationName"]
     assert seen == {"SignInLogs", "AuditLogs"}, f"only exercised {seen}"
+
+
+# ── sources added alongside the M365 / cloud-native / remote-access packs ──
+
+@pytest.mark.asyncio
+async def test_m365_audit_inbox_rule_uses_entities():
+    """The mailbox-rule operation is why this source exists: it's the only
+    place T1564.008 (email hiding rules) is representable."""
+    source = get_registry()["m365_audit"]
+    event = await source.generate_with_entities(ENTITIES, {"operation": "New-InboxRule"})
+    data = json.loads(event.raw)
+    assert data["Operation"] == "New-InboxRule"
+    assert data["Workload"] == "Exchange"          # derived from the operation
+    assert data["UserId"] == "jsmith@corp.local"
+    assert data["MailboxOwnerUPN"] == "jsmith@corp.local"
+    assert data["ClientIP"] == "203.0.113.9"
+    # The rule itself must be inspectable, not just named.
+    params = {p["Name"]: p["Value"] for p in data["Parameters"]}
+    assert params["MoveToFolder"] == "Deleted Items"
+
+
+@pytest.mark.asyncio
+async def test_m365_audit_derives_sharepoint_workload_from_operation():
+    source = get_registry()["m365_audit"]
+    data = json.loads((await source.generate_with_entities(ENTITIES, {"operation": "FileDownloaded"})).raw)
+    assert data["Workload"] == "SharePoint"
+    assert data["SourceFileName"]
+
+
+@pytest.mark.asyncio
+async def test_sysmon_process_create_uses_entity_host_and_user():
+    source = get_registry()["sysmon"]
+    data = json.loads((await source.generate_with_entities(ENTITIES, {"event_id": 1})).raw)
+    assert data["EventID"] == 1
+    assert data["Computer"] == "WIN-TESTHOST"
+    assert data["EventData"]["User"].endswith("jsmith")
+    assert data["EventData"]["CommandLine"]
+
+
+@pytest.mark.asyncio
+async def test_sysmon_network_connect_uses_entity_ips():
+    source = get_registry()["sysmon"]
+    data = json.loads((await source.generate_with_entities(ENTITIES, {"event_id": 3})).raw)
+    assert data["EventData"]["SourceIp"] == "10.10.5.5"
+    assert data["EventData"]["DestinationIp"] == "203.0.113.9"
+
+
+@pytest.mark.asyncio
+async def test_gcp_audit_uses_entities_and_honors_unknown_method():
+    source = get_registry()["gcp_audit"]
+    data = json.loads((await source.generate_with_entities(
+        ENTITIES, {"method_name": "storage.objects.get"})).raw)
+    assert data["protoPayload"]["methodName"] == "storage.objects.get"
+    assert data["protoPayload"]["authenticationInfo"]["principalEmail"] == "jsmith@corp.local"
+    assert data["protoPayload"]["requestMetadata"]["callerIp"] == "203.0.113.9"
+
+    # An unrecognized method must not be silently swapped for a different call.
+    data = json.loads((await source.generate_with_entities(
+        ENTITIES, {"method_name": "some.future.method"})).raw)
+    assert data["protoPayload"]["methodName"] == "some.future.method"
+
+
+@pytest.mark.asyncio
+async def test_kubernetes_audit_exec_carries_command_and_entity():
+    source = get_registry()["kubernetes_audit"]
+    data = json.loads((await source.generate_with_entities(
+        ENTITIES, {"verb": "create", "resource": "pods", "subresource": "exec"})).raw)
+    assert data["verb"] == "create"
+    assert data["objectRef"]["subresource"] == "exec"
+    assert data["user"]["username"] == "jsmith@corp.local"
+    assert data["sourceIPs"] == ["10.10.5.5"]
+    # The command is the whole point of an exec audit record.
+    assert data["requestObject"]["command"]
+
+
+@pytest.mark.asyncio
+async def test_globalprotect_uses_entities_in_raw_and_structured():
+    source = get_registry()["globalprotect_vpn"]
+    event = await source.generate_with_entities(ENTITIES, {"event": "gateway-auth"})
+    assert event.structured["stage"] == "gateway-auth"
+    assert event.structured["srcuser"] == "jsmith"
+    assert event.structured["public_ip"] == "203.0.113.9"
+    assert event.structured["machinename"] == "WIN-TESTHOST"
+    # The CSV on the wire must carry them too, not just the parsed view.
+    assert "jsmith" in event.raw and "203.0.113.9" in event.raw
+
+
+@pytest.mark.asyncio
+async def test_duo_mfa_fraud_result_uses_entities():
+    """result=fraud is the push-fatigue tell -- a user reporting a push they
+    didn't trigger."""
+    source = get_registry()["duo_mfa"]
+    data = json.loads((await source.generate_with_entities(ENTITIES, {"result": "fraud"})).raw)
+    assert data["result"] == "fraud"
+    assert data["reason"] == "user_marked_fraud"
+    assert data["user"]["name"] == "jsmith@corp.local"
+    assert data["access_device"]["ip"] == "203.0.113.9"
+
+
+@pytest.mark.asyncio
+async def test_duo_mfa_honors_application_override():
+    source = get_registry()["duo_mfa"]
+    data = json.loads((await source.generate_with_entities(
+        ENTITIES, {"application": "GlobalProtect VPN"})).raw)
+    assert data["application"]["name"] == "GlobalProtect VPN"

@@ -1,0 +1,56 @@
+id: mfa_fatigue_vpn_access
+name: MFA Fatigue to VPN Access
+description: >
+  Credential-stuffing follow-through: the attacker already has a valid
+  password and grinds at the second factor. Repeated Duo pushes are denied,
+  one is reported as fraud, and eventually a worn-down user approves. The
+  approved session is then used to authenticate to the VPN from the same
+  attacker infrastructure, and endpoint telemetry picks up discovery
+  commands once inside. Delays are seconds from scenario start.
+steps:
+  # 1-3. Push bombing: repeated denials against one identity.
+  - source: duo_mfa
+    delay: 0
+    jitter: 2
+    overrides: {result: denied, factor: duo_push, application: GlobalProtect VPN}
+
+  - source: duo_mfa
+    delay: 20
+    jitter: 3
+    overrides: {result: denied, factor: duo_push, application: GlobalProtect VPN}
+
+  # The user reports it — the clearest signal this isn't a stuck client.
+  - source: duo_mfa
+    delay: 45
+    jitter: 5
+    overrides: {result: fraud, factor: duo_push, application: GlobalProtect VPN}
+
+  # 4. Fatigue wins: an approval arrives from the same attacker IP.
+  - source: duo_mfa
+    delay: 90
+    jitter: 10
+    overrides: {result: success, factor: duo_push, application: GlobalProtect VPN}
+
+  # 5. The approved factor is spent immediately on VPN gateway auth.
+  - source: globalprotect_vpn
+    delay: 110
+    jitter: 5
+    overrides: {event: gateway-auth}
+
+  # 6. Tunnel established — the identity is now inside the network.
+  - source: globalprotect_vpn
+    delay: 130
+    jitter: 5
+    overrides: {event: tunnel-connect}
+
+  # 7. Post-access discovery on the endpoint (T1087 / T1069).
+  - source: sysmon
+    delay: 180
+    jitter: 20
+    overrides: {event_id: 1}
+
+  # 8. Outbound connection from that same host to attacker infrastructure.
+  - source: sysmon
+    delay: 240
+    jitter: 25
+    overrides: {event_id: 3}

@@ -1,6 +1,6 @@
 # XSIAM Log Engine
 
-A Dockerized enterprise log-simulation engine. It generates realistic log traffic from **22 enterprise sources** and forwards it to a Palo Alto **Cortex XSIAM** tenant or **Cortex XDR BrokerVM** over three transports — HTTP (XSIAM HTTP Collector), Syslog (UDP/TCP/TLS), and WEC (Windows Event Forwarding over HTTPS).
+A Dockerized enterprise log-simulation engine. It generates realistic log traffic from **28 enterprise sources** and forwards it to a Palo Alto **Cortex XSIAM** tenant or **Cortex XDR BrokerVM** over three transports — HTTP (XSIAM HTTP Collector), Syslog (UDP/TCP/TLS), and WEC (Windows Event Forwarding over HTTPS).
 
 Use it to exercise XSIAM/XDR ingestion, validate parsing rules, demo dashboards, or load-test a BrokerVM — without touching real endpoints.
 
@@ -57,7 +57,7 @@ You can also configure everything from the GUI after first boot — open **Confi
 graph TB
     GUI["React GUI :3000"] -->|nginx /api/ proxy| API["FastAPI :8080"]
     API --> Engine["Engine Orchestrator"]
-    Engine --> Sources["22 Log Sources<br/>(async coroutines)"]
+    Engine --> Sources["28 Log Sources<br/>(async coroutines)"]
     Sources --> HTTP["HTTP → XSIAM Tenant"]
     Sources --> Syslog["Syslog → BrokerVM :514"]
     Sources --> WEC["WEC / HTTPS → BrokerVM :5986"]
@@ -97,6 +97,12 @@ If a source hits **5 consecutive send errors** it trips a circuit breaker and au
 | AWS CloudTrail | HTTP | cloud, aws |
 | NetFlow v5/v9 | Syslog | network, flow |
 | Proofpoint TAP | HTTP | email, cloud |
+| Microsoft 365 Audit | HTTP | cloud, email, saas |
+| Sysmon | WEC | windows, endpoint, process |
+| GCP Cloud Audit Logs | HTTP | cloud, gcp |
+| Kubernetes Audit | HTTP | cloud, container |
+| GlobalProtect VPN | Syslog | vpn, remote-access |
+| Duo MFA | HTTP | identity, mfa |
 
 A source's transport isn't fixed — any source advertising multiple `supported_transports` can be switched from its card in the GUI. See [docs/adding_a_source.md](docs/adding_a_source.md) to add your own in a single file (auto-discovered at startup).
 
@@ -191,9 +197,11 @@ unrelated per-source noise. Two are shipped (`engine/scenarios/definitions/*.yam
 
 - **Phishing to Exfiltration** — Proofpoint click → Okta SSO sign-in → CrowdStrike detection → AWS CloudTrail `GetObject`.
 - **Insider Privilege Escalation** — Okta password change → AWS `CreateAccessKey`/`AttachUserPolicy` → CrowdStrike process activity.
-- **Cloud Gift Card Fraud (Jingle Thief)** — modeled on [Unit 42's CL-CRI-1032 writeup](https://unit42.paloaltonetworks.com/cloud-based-gift-card-fraud-campaign): phishing mail → click-through to a fake M365 portal → Entra ID sign-in from attacker infrastructure → SharePoint recon → rogue authenticator enrollment for MFA persistence → internal phish → gift card app access. Entirely identity-based — no malware, no privilege escalation — which makes it a good test of identity-centric detection content.
+- **MFA Fatigue to VPN Access** — repeated Duo push denials → a fraud report → an eventual approval → GlobalProtect gateway auth and tunnel from the same attacker IP → Sysmon discovery commands on the host.
+- **Cloud Gift Card Fraud (Jingle Thief)** — modeled on [Unit 42's CL-CRI-1032 writeup](https://unit42.paloaltonetworks.com/cloud-based-gift-card-fraud-campaign): phishing mail → click-through to a fake M365 portal → Entra ID sign-in from attacker infrastructure → SharePoint recon and document exfil → an inbox rule that buries replies in Deleted Items → rogue authenticator enrollment for MFA persistence → internal phish → hard-deletion of the replies → gift card app access. Entirely identity-based — no malware, no privilege escalation — which makes it a good test of identity-centric detection content.
 
-Five sources (`okta`, `crowdstrike_falcon`, `aws_cloudtrail`, `proofpoint_tap`, `azure_ad`) accept a shared
+Eleven sources (`okta`, `crowdstrike_falcon`, `aws_cloudtrail`, `proofpoint_tap`, `azure_ad`,
+`m365_audit`, `sysmon`, `gcp_audit`, `kubernetes_audit`, `globalprotect_vpn`, `duo_mfa`) accept a shared
 `ScenarioEntities` (username/domain user/host/internal+external IP) and per-step `overrides`
 (e.g. force a specific `event_type`); every other source safely no-ops back to its normal
 `generate()` if ever referenced in a scenario step. Those steps still fire, but with ordinary
@@ -286,7 +294,7 @@ This is a lab/testing tool; defaults assume it runs on a trusted network. Curren
 ## Development
 
 ```bash
-# Tests (224 passing: sources, transports HTTP/Syslog/WEC, API, scenarios, engine)
+# Tests (245 passing: sources, transports HTTP/Syslog/WEC, API, scenarios, engine)
 pip install -r engine/requirements.txt
 pytest tests/ -q
 pytest tests/ --cov=engine --cov-report=term-missing   # with coverage
